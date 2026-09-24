@@ -1,0 +1,12 @@
+{
+  "name": "yoshio-ai-business",
+  "version": "1.0.0",
+  "private": true,
+  "description": "コンテンツ企画をMac内に保存するローカルWebアプリ",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  }
+}

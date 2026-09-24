@@ -1,0 +1,16 @@
+# 秘密情報（サンプルのみ共有可）
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets/
+
+# 個人の企画データと開発時の生成物
+data/
+node_modules/
+.npm-cache/
+*.log
+.DS_Store
+coverage/
