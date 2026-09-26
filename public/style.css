@@ -37,3 +37,10 @@ dd { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .error { background: #fff0ec; color: #9b3220; border-radius: 8px; padding: 14px; }
 footer { padding: 20px 24px 36px; text-align: center; color: #62726c; font-size: 12px; }
 @media (max-width: 720px) { .layout { grid-template-columns: 1fr; } header { align-items: flex-start; flex-direction: column; } main { padding: 28px 16px; } .card { padding: 22px; } }
+.workflow { margin-top: 24px; }
+.workflow h2:not(:first-child) { margin-top: 36px; }
+textarea + button, button + button { margin-top: 12px; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+details { margin-top: 28px; border-top: 1px solid #dfe6e0; padding-top: 20px; }
+summary { cursor: pointer; font-weight: 600; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }

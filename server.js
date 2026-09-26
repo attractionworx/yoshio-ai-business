@@ -4,6 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
+import { buildPrompt, contentFields, parseImport, validateContent } from './lib/content.js';
+import { createDraftStore } from './lib/drafts.js';
+import { draftPages } from './lib/draft-pages.js';
+
 const projectDirectory = fileURLToPath(new URL('.', import.meta.url));
 const mediaOptions = ['ブログ', 'note', 'X', 'Instagram', 'YouTube'];
 const fields = [
@@ -26,7 +30,7 @@ function page(title, content) {
 <html lang="ja"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)} | Yoshio AI Business</title>
-<link rel="stylesheet" href="/style.css"></head>
+<link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
 <body><header><a class="brand" href="/">Yoshio AI Business</a>
 <span class="badge">ローカル企画ノート</span></header>
 <main>${content}</main>
@@ -53,7 +57,7 @@ function formPage(plans, values = {}, error = '') {
 <div class="layout"><section class="card"><h2>新しい企画</h2>
 ${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}
 <form method="post" action="/plans">${inputs}<button type="submit">企画を作成</button>
-<p class="hint">入力内容を整理して保存します。AIによる文章生成はまだ行いません。</p></form></section>
+<p class="hint">入力内容を整理して保存します。保存後、Codexへの依頼文を作成できます。</p></form></section>
 <section class="card saved"><h2>保存した企画 <span class="count">${plans.length}</span></h2>
 ${plans.length ? `<ul class="plan-list">${plans.map(plan => `<li><a href="/plans/${plan.id}">${escapeHtml(plan.theme)}</a><p class="hint">${escapeHtml(plan.medium)} · ${formatDate(plan.createdAt)}</p></li>`).join('')}</ul>` : '<p class="muted">まだ企画はありません。<br>最初のアイデアを保存してみましょう。</p>'}</section></div>`);
 }
@@ -62,12 +66,14 @@ function formatDate(value) {
   return escapeHtml(new Date(value).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }));
 }
 
-function detailPage(plan) {
+const { workflow, editor, importPreview } = draftPages({ escapeHtml, formatDate });
+
+function detailPage(plan, drafts = [], raw = '', error = '') {
   return page(plan.theme, `<a class="back" href="/">← 企画一覧・新規作成へ</a>
 <article class="card detail"><p class="eyebrow">保存済みの企画</p><h1>${escapeHtml(plan.theme)}</h1>
 <p class="hint">作成日時：${formatDate(plan.createdAt)}（日本時間）</p>
 <dl>${fields.map(([key, label]) => `<div><dt>${label}</dt><dd>${escapeHtml(plan[key] || '未入力')}</dd></div>`).join('')}</dl>
-<p class="notice">この企画をもとに、記事の構成やSNS投稿案を考えていきましょう。</p></article>`);
+<p class="notice">この企画をもとに、記事の構成やSNS投稿案を考えていきましょう。</p></article>${workflow(plan, drafts, raw, error)}`);
 }
 
 function requestError(message, status = 400) {
@@ -76,6 +82,18 @@ function requestError(message, status = 400) {
 
 // テスト時は一時フォルダを渡し、実際の企画データから分離できます。
 export function createApp({ dataDirectory = path.join(projectDirectory, 'data') } = {}) {
+  const draftStore = createDraftStore(dataDirectory);
+  async function readPlan(id) {
+    try { return JSON.parse(await readFile(path.join(dataDirectory, `${id}.json`), 'utf8')); }
+    catch (error) { if (error.code === 'ENOENT') throw requestError('企画が見つかりません。', 404); throw error; }
+  }
+  async function readForm(request, host, limit = 100_000) {
+    if ((request.headers.origin && request.headers.origin !== `http://${host}`) || request.headers['sec-fetch-site'] === 'cross-site') throw requestError('このアプリの入力画面から保存してください。', 403);
+    if (request.headers['content-type']?.split(';')[0] !== 'application/x-www-form-urlencoded') throw requestError('フォーム形式で送信してください。', 415);
+    const chunks = []; let size = 0;
+    for await (const chunk of request) { size += chunk.length; if (size > limit) throw requestError('入力が大きすぎます。文字数を減らしてください。', 413); chunks.push(chunk); }
+    return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+  }
   async function listPlans() {
     await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
     const names = await readdir(dataDirectory);
@@ -88,7 +106,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data') 
     function send(status, body, type = 'text/html; charset=utf-8') {
       response.writeHead(status, {
         'Content-Type': type,
-        'Content-Security-Policy': "default-src 'none'; style-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+        'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
         'X-Content-Type-Options': 'nosniff',
         // 同じアプリへのPOSTではOriginを保持します。no-referrerだと
         // ブラウザがOrigin: nullを送り、下の送信元チェックで拒否されます。
@@ -108,25 +126,12 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data') 
       if (request.method === 'GET' && url.pathname === '/style.css') {
         return send(200, await readFile(path.join(projectDirectory, 'public/style.css')), 'text/css; charset=utf-8');
       }
+      if (request.method === 'GET' && url.pathname === '/app.js') return send(200, await readFile(path.join(projectDirectory, 'public/app.js')), 'text/javascript; charset=utf-8');
       if (request.method === 'GET' && url.pathname === '/') {
         return send(200, formPage(await listPlans()));
       }
       if (request.method === 'POST' && url.pathname === '/plans') {
-        if ((request.headers.origin && request.headers.origin !== `http://${host}`)
-          || request.headers['sec-fetch-site'] === 'cross-site') {
-          throw requestError('このアプリの入力画面から保存してください。', 403);
-        }
-        if (request.headers['content-type']?.split(';')[0] !== 'application/x-www-form-urlencoded') {
-          throw requestError('フォーム形式で送信してください。', 415);
-        }
-        const chunks = [];
-        let size = 0;
-        for await (const chunk of request) {
-          size += chunk.length;
-          if (size > 100_000) throw requestError('入力が大きすぎます。文字数を減らしてください。', 413);
-          chunks.push(chunk);
-        }
-        const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+        const form = await readForm(request, host);
         const values = Object.fromEntries(fields.map(([key]) => [key, (form.get(key) || '').trim()]));
         let error = '';
         if (!values.theme) error = 'コンテンツのテーマを入力してください。';
@@ -143,6 +148,41 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data') 
         response.writeHead(303, { Location: `/plans/${plan.id}` });
         return response.end();
       }
+      const importMatch = url.pathname.match(/^\/plans\/([a-f0-9-]{36})\/drafts$/);
+      if (request.method === 'POST' && importMatch) {
+        const plan = await readPlan(importMatch[1]);
+        const form = await readForm(request, host, 4_000_000);
+        const raw = form.get('result') || '';
+        try {
+          if (raw.length > 400000) throw requestError('生成結果は400,000文字以内にしてください。');
+          const parsed = parseImport(raw, plan.id);
+          if (parsed.normalization && form.get('confirmWrap') !== 'yes') {
+            return send(200, page('取り込み前の確認', importPreview(plan, parsed, raw)));
+          }
+          const draft = await draftStore.create(plan, parsed, raw, buildPrompt(plan));
+          response.writeHead(303, { Location: `/drafts/${draft.id}` });
+          return response.end();
+        } catch (error) {
+          if (!error.status) throw error;
+          return send(error.status, detailPage(plan, await draftStore.list(plan.id), raw, error.message));
+        }
+      }
+      const draftMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})$/);
+      if (draftMatch && (request.method === 'GET' || request.method === 'POST')) {
+        const draft = await draftStore.get(draftMatch[1]);
+        if (request.method === 'GET') return send(200, page('下書き', editor(draft)));
+        const form = await readForm(request, host, 4_000_000);
+        const values = Object.fromEntries(contentFields.map(([key]) => [key, key === 'titles' ? (form.get(key) || '').replace(/\r\n/g, '\n').split('\n') : (form.get(key) || '').replace(/\r\n/g, '\n')]));
+        try {
+          if (!['save', 'review'].includes(form.get('action'))) throw requestError('保存または確認済みを選択してください。');
+          await draftStore.update(draft.id, Number(form.get('revision')), validateContent(values), form.get('action'));
+          response.writeHead(303, { Location: `/drafts/${draft.id}` });
+          return response.end();
+        } catch (error) {
+          if (!error.status) throw error;
+          return send(error.status, page('下書きの保存エラー', editor(draft, values, error.message, form.get('revision'))));
+        }
+      }
       const match = url.pathname.match(/^\/plans\/([a-f0-9-]{36})$/);
       if (request.method === 'GET' && match) {
         let contents;
@@ -152,7 +192,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data') 
           if (error.code === 'ENOENT') throw requestError('企画が見つかりません。', 404);
           throw error;
         }
-        return send(200, detailPage(JSON.parse(contents)));
+        return send(200, detailPage(JSON.parse(contents), await draftStore.list(match[1])));
       }
       throw requestError('ページが見つかりません。', 404);
     } catch (error) {
