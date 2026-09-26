@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { buildPrompt, contentFields, parseImport, validateContent } from './lib/content.js';
 import { createDraftStore } from './lib/drafts.js';
+import { createImprovementStore, readImprovementSettings } from './lib/improvements.js';
 import { draftPages } from './lib/draft-pages.js';
 
 const projectDirectory = fileURLToPath(new URL('.', import.meta.url));
@@ -66,7 +67,7 @@ function formatDate(value) {
   return escapeHtml(new Date(value).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }));
 }
 
-const { workflow, editor, importPreview } = draftPages({ escapeHtml, formatDate });
+const { workflow, editor, importPreview, improvementPage } = draftPages({ escapeHtml, formatDate });
 
 function detailPage(plan, drafts = [], raw = '', error = '') {
   return page(plan.theme, `<a class="back" href="/">← 企画一覧・新規作成へ</a>
@@ -83,6 +84,7 @@ function requestError(message, status = 400) {
 // テスト時は一時フォルダを渡し、実際の企画データから分離できます。
 export function createApp({ dataDirectory = path.join(projectDirectory, 'data') } = {}) {
   const draftStore = createDraftStore(dataDirectory);
+  const improvementStore = createImprovementStore(dataDirectory);
   async function readPlan(id) {
     try { return JSON.parse(await readFile(path.join(dataDirectory, `${id}.json`), 'utf8')); }
     catch (error) { if (error.code === 'ENOENT') throw requestError('企画が見つかりません。', 404); throw error; }
@@ -167,10 +169,40 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data') 
           return send(error.status, detailPage(plan, await draftStore.list(plan.id), raw, error.message));
         }
       }
+      const improveMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})\/improve$/);
+      if (request.method === 'POST' && improveMatch) {
+        const form = await readForm(request, host);
+        const draft = await draftStore.get(improveMatch[1]);
+        if (Number(form.get('revision')) !== draft.revision) throw requestError('別の画面で更新されています。最新の下書きを開き直して依頼文を作ってください。', 409);
+        const settings = readImprovementSettings(form);
+        const improvement = await improvementStore.create(await readPlan(draft.planId), draft, settings);
+        response.writeHead(303, { Location: `/improvements/${improvement.id}` });
+        return response.end();
+      }
+      const improvementMatch = url.pathname.match(/^\/improvements\/([a-f0-9-]{36})$/);
+      if (improvementMatch && ['GET', 'POST'].includes(request.method)) {
+        const improvement = await improvementStore.get(improvementMatch[1]);
+        if (request.method === 'GET') return send(200, page('改善依頼文', improvementPage(improvement)));
+        const form = await readForm(request, host, 4_000_000);
+        if (improvement.settings.mode !== 'rewrite') throw requestError('分析結果はドラフトとして取り込めません。');
+        const raw = form.get('result') || '';
+        try {
+          if (raw.length > 400000) throw requestError('生成結果は400,000文字以内にしてください。');
+          const plan = improvement.planSnapshot;
+          const parsed = parseImport(raw, plan.id, { promptVersion: improvement.promptVersion, parentDraftId: improvement.parentDraftId, requestId: improvement.id });
+          if (parsed.normalization && form.get('confirmWrap') !== 'yes') return send(200, page('取り込み前の確認', importPreview(plan, parsed, raw, improvement)));
+          const draft = await draftStore.create(plan, parsed, raw, improvement.prompt, improvement);
+          response.writeHead(303, { Location: `/drafts/${draft.id}` });
+          return response.end();
+        } catch (error) {
+          if (!error.status) throw error;
+          return send(error.status, page('改稿の取り込み', improvementPage(improvement, raw, error.message)));
+        }
+      }
       const draftMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})$/);
       if (draftMatch && (request.method === 'GET' || request.method === 'POST')) {
         const draft = await draftStore.get(draftMatch[1]);
-        if (request.method === 'GET') return send(200, page('下書き', editor(draft)));
+        if (request.method === 'GET') return send(200, page('下書き', editor(draft, draft.edited, "", draft.revision, await draftStore.list(draft.planId), await readPlan(draft.planId))));
         const form = await readForm(request, host, 4_000_000);
         const values = Object.fromEntries(contentFields.map(([key]) => [key, key === 'titles' ? (form.get(key) || '').replace(/\r\n/g, '\n').split('\n') : (form.get(key) || '').replace(/\r\n/g, '\n')]));
         try {
@@ -180,7 +212,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data') 
           return response.end();
         } catch (error) {
           if (!error.status) throw error;
-          return send(error.status, page('下書きの保存エラー', editor(draft, values, error.message, form.get('revision'))));
+          return send(error.status, page('下書きの保存エラー', editor(draft, values, error.message, form.get('revision'), await draftStore.list(draft.planId), await readPlan(draft.planId))));
         }
       }
       const match = url.pathname.match(/^\/plans\/([a-f0-9-]{36})$/);

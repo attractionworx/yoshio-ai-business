@@ -16,3 +16,12 @@ editor?.addEventListener('input', () => {
   document.getElementById('edit-message').textContent = '変更を保存した後、内容を読み直して確認済みにしてください。';
   editor.querySelector('[data-review]').disabled = true;
 });
+// 改善依頼は保存済みの版を使用。編集中の文章を置き去りにしないよう誘導します。
+editor?.addEventListener('input', () => {
+  const button = document.querySelector('[data-improve] button');
+  if (button) { button.disabled = true; button.textContent = '編集内容を保存してから改善依頼文を作る'; }
+});
+if (editor && document.querySelector('.error')) {
+  const button = document.querySelector('[data-improve] button');
+  if (button) { button.disabled = true; button.textContent = '保存エラーを解決してから改善依頼文を作る'; }
+}

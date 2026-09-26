@@ -44,3 +44,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 details { margin-top: 28px; border-top: 1px solid #dfe6e0; padding-top: 20px; }
 summary { cursor: pointer; font-weight: 600; }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+fieldset { border: 1px solid #dfe6e0; border-radius: 8px; margin: 16px 0; min-width: 0; }
+.choice { display: flex; align-items: baseline; gap: 10px; font-weight: 400; }
+.choice input { width: auto; flex-shrink: 0; }
+.workflow li, .workflow p { overflow-wrap: anywhere; }
