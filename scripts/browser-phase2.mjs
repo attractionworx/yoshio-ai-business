@@ -1,3 +1,4 @@
+import '../test/helpers/network-guard.js';
 import { tmpdir } from 'node:os';
 // インストール済みChromeで実際にフォームを操作する確認用スクリプト。
 // Chromeの専用プロフィールと架空データはOSの一時フォルダに保存します。
@@ -19,7 +20,7 @@ const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chro
   '--headless', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
   '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
   '--disable-component-update', '--disable-breakpad', 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] });
+], { stdio: ['ignore', 'ignore', 'pipe'], env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: tmpdir() } });
 
 let socket;
 let nextId = 0;
@@ -125,9 +126,9 @@ try {
   assert.equal(await evaluate('document.getElementById("draft-status").textContent'), '編集中');
   assert.ok(!responses.some(r => r.status >= 400));
   // 今回の長文回答を実際のクリップボードから貼り付けて検証します。
-  const fixtureRaw = await readFile(path.join(root, 'test/fixtures/codex-note-response.json'), 'utf8');
+  const fixtureRaw = await readFile(new URL('../test/fixtures/codex-note-response.json', import.meta.url), 'utf8');
   const fixture = JSON.parse(fixtureRaw);
-  const wrappedFixture = await readFile(path.join(root, 'test/fixtures/codex-pasted-wrapped.txt'), 'utf8');
+  const wrappedFixture = await readFile(new URL('../test/fixtures/codex-pasted-wrapped.txt', import.meta.url), 'utf8');
   const actualPlanId = planPath.split('/').at(-1);
   const normalInput = fixtureRaw.replace(fixture.planId, actualPlanId);
   const wrappedInput = '以下が生成した回答です。\n```json\n' + wrappedFixture.replace(fixture.planId, actualPlanId) + '\n```\n以上です。';

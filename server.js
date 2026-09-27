@@ -1,3 +1,5 @@
+import { createGenerationService } from './lib/ai/generation-service.js';
+import { generationPages } from './lib/generation-pages.js';
 import http from 'node:http';
 import { readFile, writeFile, mkdir, readdir, rename } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -68,6 +70,7 @@ function formatDate(value) {
   return escapeHtml(new Date(value).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }));
 }
 
+const generationViews = generationPages(escapeHtml);
 const { workflow, editor, importPreview, improvementPage } = draftPages({ escapeHtml, formatDate });
 
 function detailPage(plan, drafts = [], raw = '', error = '') {
@@ -75,7 +78,7 @@ function detailPage(plan, drafts = [], raw = '', error = '') {
 <article class="card detail"><p class="eyebrow">保存済みの企画</p><h1>${escapeHtml(plan.theme)}</h1>
 <p class="hint">作成日時：${formatDate(plan.createdAt)}（日本時間）</p>
 <dl>${fields.map(([key, label]) => `<div><dt>${label}</dt><dd>${escapeHtml(plan[key] || '未入力')}</dd></div>`).join('')}</dl>
-<p class="notice">この企画をもとに、記事の構成やSNS投稿案を考えていきましょう。</p></article>${workflow(plan, drafts, raw, error)}`);
+<p class="notice">この企画をもとに、記事の構成やSNS投稿案を考えていきましょう。</p></article><section class="card detail workflow"><h2>直接下書き生成（Fake）</h2><p>架空サンプルで動作確認できます。外部送信・課金なし。</p><a data-direct-generation href="/plans/${plan.id}/generate">AIで下書きを生成</a></section>${workflow(plan, drafts, raw, error)}`);
 }
 
 function requestError(message, status = 400) {
@@ -83,9 +86,10 @@ function requestError(message, status = 400) {
 }
 
 // テスト時は一時フォルダを渡し、実際の企画データから分離できます。
-export function createApp({ dataDirectory = path.join(projectDirectory, 'data') } = {}) {
+export function createApp({ dataDirectory = path.join(projectDirectory, 'data'), generationOptions = {} } = {}) {
   const draftStore = createDraftStore(dataDirectory);
   const improvementStore = createImprovementStore(dataDirectory);
+  const generation = createGenerationService({ ...generationOptions, dataDirectory, draftStore });
   async function readPlan(id) {
     try { return JSON.parse(await readFile(path.join(dataDirectory, `${id}.json`), 'utf8')); }
     catch (error) { if (error.code === 'ENOENT') throw requestError('企画が見つかりません。', 404); throw error; }
@@ -150,6 +154,38 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data') 
         await rename(`${destination}.tmp`, destination);
         response.writeHead(303, { Location: `/plans/${plan.id}` });
         return response.end();
+      }
+      const generateMatch = url.pathname.match(/^\/plans\/([a-f0-9-]{36})\/generate$/);
+      if (generateMatch && ['GET', 'POST'].includes(request.method)) {
+        const plan = await readPlan(generateMatch[1]);
+        if (request.method === 'GET') return send(200, page('生成前確認', generationViews.confirmation(plan, generation.confirmation(plan), await generation.summary(), generation.config, await generation.recent(plan.id))));
+        // 有料操作へ拡張する入口はOrigin必須。署名済み確認トークンも検証。
+        if (request.headers.origin !== `http://${host}`) throw requestError('このアプリの生成前確認から実行してください。', 403);
+        const form = await readForm(request, host, 10000);
+        if (form.get('confirm') !== 'yes' || [...form.keys()].some(k => !['token', 'confirm'].includes(k)) || form.getAll('token').length !== 1 || form.getAll('confirm').length !== 1) throw requestError('生成前確認の入力が不正です。');
+        try {
+          const run = await generation.execute(plan, form.get('token'));
+          response.writeHead(303, { Location: `/generations/${run.id}` });
+          return response.end();
+        } catch (error) {
+          // Providerや保存層の生エラーは表示・ログに出さない。
+          const known = [400, 409, 503].includes(error.status);
+          return send(known ? error.status : 503, page('生成エラー', `<section class="card detail"><h1>生成を完了できませんでした</h1><p role="alert">${escapeHtml(known ? error.message : '生成記録の保存に失敗しました。生成は再実行していません。記録を削除せず確認してください。')}</p><a href="/plans/${plan.id}/generate">生成前確認・実行履歴へ</a></section>`));
+        }
+      }
+      const generationMatch = url.pathname.match(/^\/generations\/([a-f0-9-]{36})(\/save)?$/);
+      if (generationMatch && ['GET', 'POST'].includes(request.method)) {
+        if (request.method === 'POST') {
+          if (!generationMatch[2] || request.headers.origin !== `http://${host}`) throw requestError('生成結果画面から操作してください。', 403);
+          const form = await readForm(request, host, 10000);
+          generation.verifyAction(generationMatch[1], form.get('token'));
+          await generation.retrySave(generationMatch[1]);
+          response.writeHead(303, { Location: `/generations/${generationMatch[1]}` });
+          return response.end();
+        }
+        if (generationMatch[2]) throw requestError('ページが見つかりません。', 404);
+        const run = await generation.get(generationMatch[1]);
+        return send(200, page('Fake AI生成結果', generationViews.result(run, await generation.summary(), generation.config, generation.actionToken(run.id))));
       }
       const importMatch = url.pathname.match(/^\/plans\/([a-f0-9-]{36})\/drafts$/);
       if (request.method === 'POST' && importMatch) {

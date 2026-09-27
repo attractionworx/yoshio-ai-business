@@ -1,3 +1,4 @@
+import '../test/helpers/network-guard.js';
 import { tmpdir } from 'node:os';
 // インストール済みChromeで実際にフォームを操作する確認用スクリプト。
 // Chromeの専用プロフィールと架空データはOSの一時フォルダに保存します。
@@ -19,7 +20,7 @@ const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chro
   '--headless', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
   '--no-first-run', '--no-default-browser-check', '--disable-background-networking',
   '--disable-component-update', '--disable-breakpad', 'about:blank',
-], { stdio: ['ignore', 'ignore', 'pipe'] });
+], { stdio: ['ignore', 'ignore', 'pipe'], env: { PATH: process.env.PATH, HOME: process.env.HOME, TMPDIR: tmpdir() } });
 
 let socket;
 let nextId = 0;
