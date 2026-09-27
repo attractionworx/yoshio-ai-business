@@ -9,7 +9,8 @@ import { createGenerationService } from '../lib/ai/generation-service.js';
 import { createGenerationStore } from '../lib/ai/generation-store.js';
 import { createFakeProvider, fakeContent } from '../lib/ai/fake-provider.js';
 import { summarizeUsage, checkBudget, estimateYen } from '../lib/ai/usage-budget.js';
-import { fakeConfig, resolveConfig } from '../lib/ai/config.js';
+import { fakeConfig, openaiConfig, resolveConfig } from '../lib/ai/config.js';
+import { createOpenAIProvider } from '../lib/ai/openai-provider.js';
 import { factRule } from '../lib/fact-policy.js';
 import { buildPrompt, PROMPT_VERSION } from '../lib/content.js';
 import { buildGenerationPrompt } from '../lib/ai/generation-prompt.js';
@@ -194,10 +195,40 @@ test('確認トークンの改ざん・別企画・期限切れを拒否', async
   assert.equal((await drafts(c)).length, 0);
 });
 
-test('Fake以外のProvider・任意モデル・再試行設定は利用不可', async () => {
-  assert.throws(() => resolveConfig({ model: 'arbitrary-model' }), /Fake設定/);
-  assert.throws(() => resolveConfig({ retries: 1 }), /Fake設定/);
-  await assert.rejects(() => setup({ provider: { kind: 'openai' } }), /Fake Provider/);
+test('任意モデル・再試行設定・設定外Providerは利用不可', async () => {
+  assert.throws(() => resolveConfig({ model: 'arbitrary-model' }), /設定/);
+  assert.throws(() => resolveConfig({ retries: 1 }), /設定/);
+  await assert.rejects(() => setup({ provider: { kind: 'openai' } }), /設定が一致/);
+});
+
+test('OpenAI Providerはサーバー設定・JSON schema・store:falseで既存保存経路を使う（通信なし）', async () => {
+  let request;
+  const client = { responses: { async create(body, options) {
+    request = { body, options };
+    return { status: 'completed', output_text: JSON.stringify(fakeContent), usage: { input_tokens: 120, output_tokens: 240 } };
+  } } };
+  const c = await setup({ provider: createOpenAIProvider({ client }), config: openaiConfig });
+  const run = await execute(c);
+  assert.equal(run.state, 'succeeded');
+  assert.equal(request.body.store, false);
+  assert.equal(request.body.model, openaiConfig.model);
+  assert.equal(request.body.text.format.type, 'json_schema');
+  assert.equal(request.body.text.format.schema.properties.titles.minItems, 5);
+  assert.equal(request.body.text.format.schema.properties.titles.maxItems, 5);
+  assert.equal(request.body.max_output_tokens, openaiConfig.maxOutputTokens);
+  assert.ok(request.body.instructions.includes(c.plan.theme));
+  assert.equal(request.options.signal instanceof AbortSignal, true);
+  const draft = await c.draftStore.get(run.draftId);
+  assert.equal(draft.generationMethod, 'ai-direct-openai');
+  assert.equal(draft.generation.simulation, false);
+  assert.equal(draft.status, '未確認');
+  assert.equal(draft.generation.model, openaiConfig.model);
+});
+
+test('OpenAI APIキー未設定はProvider実行前に安全に拒否', async () => {
+  const provider = createOpenAIProvider({ apiKey: '', client: null });
+  assert.equal(provider.ready, false);
+  await assert.rejects(() => provider.generate({}), error => error.outcome === 'not-billed');
 });
 
 test('共通の創作禁止方針を手動・改善・直接生成で維持', () => {
@@ -221,6 +252,28 @@ test('不正な応答内の状態・企画ID・モデル等は採用せず拒否
   const c = await setup({ provider: { kind: 'fake', async generate() { return { status: 'completed', text: JSON.stringify({ ...fakeContent, status: '確認済み', model: 'fake-other' }), usage: { inputTokens: 1, outputTokens: 1 } }; } } });
   assert.equal((await execute(c)).state, 'failed');
   assert.equal((await drafts(c)).length, 0);
+});
+
+test('生成検証の失敗項目を安全なコードで記録し原文・秘密を保存しない', async () => {
+  for (const [response, code] of [
+    [{ ...fakeContent, titles: fakeContent.titles.slice(0, 3) }, 'titles-count'],
+    [{ ...fakeContent, cta: undefined }, 'required-field'],
+    [{ ...fakeContent, extra: 'SYNTHETIC_SECRET' }, 'unexpected-field'],
+    [{ ...fakeContent, body: '私は月収100万円を達成しました。' }, 'fact-policy'],
+  ]) {
+    const raw = JSON.stringify(response);
+    const c = await setup({ provider: { kind: 'fake', async generate() {
+      return { status: 'completed', text: raw, usage: { inputTokens: 10, outputTokens: 20 }, apiKey: 'SYNTHETIC_KEY' };
+    } } });
+    const run = await execute(c);
+    assert.equal(run.state, 'failed');
+    assert.equal(run.validationCode, code);
+    assert.match(run.message, /検証に失敗/);
+    assert.ok(!JSON.stringify(run).includes(raw));
+    assert.ok(!JSON.stringify(run).includes('SYNTHETIC_KEY'));
+    assert.ok(!JSON.stringify(await c.store.read()).includes(raw));
+    assert.equal((await drafts(c)).length, 0);
+  }
 });
 
 async function startApp(t, options = {}) {
@@ -268,6 +321,32 @@ test('HTTP: 確認画面は未実行・明示実行・結果・既存公開準�
   const manual = await c.post(c.planPath + '/drafts', { result: JSON.stringify({ planId: c.planPath.split('/').at(-1), promptVersion: PROMPT_VERSION, generatedAt: null, content: fakeContent }) });
   assert.equal(manual.status, 303);
   assert.match(await (await fetch(c.base + manual.headers.get('location'))).text(), /Codex手動取り込み/);
+});
+
+test('OpenAI設定の確認画面・HTTP生成・未確認保存（Providerはローカルmock）', async t => {
+  const c = await startApp(t, { generationOptions: {
+    config: openaiConfig,
+    provider: { kind: 'openai', ready: true, async generate() {
+      return { status: 'completed', text: JSON.stringify(fakeContent), usage: { inputTokens: 100, outputTokens: 200 } };
+    } },
+  } });
+  const route = c.planPath + '/generate';
+  const html = await (await fetch(c.base + route)).text();
+  assert.match(html, /OpenAI APIへ企画情報を送信/);
+  assert.match(html, /送信しません/);
+  assert.match(html, /gpt-6-luna/);
+  assert.match(html, /以下の企画情報と事実を創作しないための指示を送信/);
+  assert.doesNotMatch(html, /OPENAI_API_KEY|sk-[A-Za-z0-9_-]{8}/);
+  const token = html.match(/name="token" value="([^"]+)"/)[1];
+  const response = await c.post(route, { token, confirm: 'yes' });
+  assert.equal(response.status, 303);
+  const result = await (await fetch(c.base + response.headers.get('location'))).text();
+  assert.match(result, /OpenAI API生成結果/);
+  const draftPath = result.match(/data-generated-draft href="([^"]+)"/)[1];
+  const data = JSON.parse(await readFile(path.join(c.directory, 'drafts', draftPath.split('/').at(-1) + '.json'), 'utf8'));
+  assert.equal(data.generationMethod, 'ai-direct-openai');
+  assert.equal(data.status, '未確認');
+  assert.equal(data.generation.simulation, false);
 });
 
 test('Providerの秘密値をHTML・台帳・ログへ出さない', async t => {

@@ -58,5 +58,5 @@ document.querySelectorAll('[data-publication-copy]').forEach(button => {
 // サーバーの実行IDによる重複防止に加え、画面でも送信中を明示します。
 document.querySelector('[data-generate]')?.addEventListener('submit', event => {
   event.currentTarget.querySelector('button').disabled = true;
-  event.currentTarget.querySelector('[data-generation-message]').textContent = 'Fake AIで生成しています。外部送信・課金はありません。';
+  event.currentTarget.querySelector('[data-generation-message]').textContent = 'AIで生成しています。完了までこの画面を閉じずにお待ちください。';
 });

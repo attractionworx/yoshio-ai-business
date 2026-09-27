@@ -1,4 +1,6 @@
 import { createGenerationService } from './lib/ai/generation-service.js';
+import { createOpenAIProvider } from './lib/ai/openai-provider.js';
+import { openaiConfig } from './lib/ai/config.js';
 import { generationPages } from './lib/generation-pages.js';
 import http from 'node:http';
 import { readFile, writeFile, mkdir, readdir, rename } from 'node:fs/promises';
@@ -38,7 +40,7 @@ function page(title, content) {
 <body><header><a class="brand" href="/">Yoshio AI Business</a>
 <span class="badge">ローカル企画ノート</span></header>
 <main>${content}</main>
-<footer>このMacに企画を保存します。外部AIへの送信・自動投稿は行いません。</footer></body></html>`;
+<footer>このMacに企画を保存します。OpenAI直接生成は確認後に企画情報を送信します。自動投稿は行いません。</footer></body></html>`;
 }
 
 function formPage(plans, values = {}, error = '') {
@@ -78,7 +80,7 @@ function detailPage(plan, drafts = [], raw = '', error = '') {
 <article class="card detail"><p class="eyebrow">保存済みの企画</p><h1>${escapeHtml(plan.theme)}</h1>
 <p class="hint">作成日時：${formatDate(plan.createdAt)}（日本時間）</p>
 <dl>${fields.map(([key, label]) => `<div><dt>${label}</dt><dd>${escapeHtml(plan[key] || '未入力')}</dd></div>`).join('')}</dl>
-<p class="notice">この企画をもとに、記事の構成やSNS投稿案を考えていきましょう。</p></article><section class="card detail workflow"><h2>直接下書き生成（Fake）</h2><p>架空サンプルで動作確認できます。外部送信・課金なし。</p><a data-direct-generation href="/plans/${plan.id}/generate">AIで下書きを生成</a></section>${workflow(plan, drafts, raw, error)}`);
+<p class="notice">この企画をもとに、記事の構成やSNS投稿案を考えていきましょう。</p></article><section class="card detail workflow"><h2>AIで直接下書きを生成</h2><p>生成前確認で送信内容・使用設定・概算を確認できます。</p><a data-direct-generation href="/plans/${plan.id}/generate">AIで下書きを生成</a></section>${workflow(plan, drafts, raw, error)}`);
 }
 
 function requestError(message, status = 400) {
@@ -156,9 +158,9 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
         return response.end();
       }
       const generateMatch = url.pathname.match(/^\/plans\/([a-f0-9-]{36})\/generate$/);
-      if (generateMatch && ['GET', 'POST'].includes(request.method)) {
+if (generateMatch && ['GET', 'POST'].includes(request.method)) {
         const plan = await readPlan(generateMatch[1]);
-        if (request.method === 'GET') return send(200, page('生成前確認', generationViews.confirmation(plan, generation.confirmation(plan), await generation.summary(), generation.config, await generation.recent(plan.id))));
+        if (request.method === 'GET') return send(200, page('生成前確認', generationViews.confirmation(plan, generation.confirmation(plan), await generation.summary(), generation.config, await generation.recent(plan.id), '', generationOptions.provider?.ready !== false)));
         // 有料操作へ拡張する入口はOrigin必須。署名済み確認トークンも検証。
         if (request.headers.origin !== `http://${host}`) throw requestError('このアプリの生成前確認から実行してください。', 403);
         const form = await readForm(request, host, 10000);
@@ -185,7 +187,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
         }
         if (generationMatch[2]) throw requestError('ページが見つかりません。', 404);
         const run = await generation.get(generationMatch[1]);
-        return send(200, page('Fake AI生成結果', generationViews.result(run, await generation.summary(), generation.config, generation.actionToken(run.id))));
+        return send(200, page('AI生成結果', generationViews.result(run, await generation.summary(), generation.config, generation.actionToken(run.id))));
       }
       const importMatch = url.pathname.match(/^\/plans\/([a-f0-9-]{36})\/drafts$/);
       if (request.method === 'POST' && importMatch) {
@@ -287,7 +289,10 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const server = createApp();
+  // dotenvは実行時だけ読み込み、server.jsをimportする自動テストでは読みません。
+  await import('dotenv/config');
+  const provider = createOpenAIProvider();
+  const server = createApp({ generationOptions: { provider, config: openaiConfig } });
   // 他の端末からアクセスできないよう、このMacのループバックだけで待ち受けます。
   server.listen(3000, '127.0.0.1', () => {
     console.log('Yoshio AI Business を起動しました。http://127.0.0.1:3000 をブラウザで開いてください。');

@@ -4,9 +4,15 @@
   "private": true,
   "description": "コンテンツ企画をMac内に保存するローカルWebアプリ",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node server.js",
     "test": "node --import ./test/helpers/network-guard.js --test test/*.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.4",
+    "openai": "^7.23.0"
   }
 }

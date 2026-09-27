@@ -89,7 +89,7 @@ try {
   await until(() => evaluate('Boolean(document.querySelector("[data-generate]"))'));
   assert.ok(!(await readdir(dataDirectory)).includes('generations'));
   assert.match(await evaluate('document.body.innerText'), /外部送信・課金なし/);
-  assert.match(await evaluate('document.body.innerText'), /最大予約額（模擬）：¥10/);
+  assert.match(await evaluate('document.body.innerText'), /最大予約額：¥10/);
   for (const width of [320, 375]) {
     await call('Emulation.setDeviceMetricsOverride', { width, height: 812, deviceScaleFactor: 1, mobile: true });
     assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
@@ -102,7 +102,7 @@ try {
   await until(() => evaluate('Boolean(document.querySelector("[data-generated-draft]"))'));
   const resultPath = await evaluate('location.pathname');
   assert.equal(await evaluate('document.getElementById("generation-state").textContent'), '成功');
-  assert.match(await evaluate('document.body.innerText'), /模擬API実行 1回/);
+  assert.match(await evaluate('document.body.innerText'), /API実行 1回/);
   assert.match(await evaluate('document.body.innerText'), /下書き保存 1件/);
   assert.match(await evaluate('document.body.innerText'), /今回の模擬概算：¥3/);
   await evaluate('document.querySelector("[data-generated-draft]").click()');
