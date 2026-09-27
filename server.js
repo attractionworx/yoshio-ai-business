@@ -7,6 +7,7 @@ import path from 'node:path';
 import { buildPrompt, contentFields, parseImport, validateContent } from './lib/content.js';
 import { createDraftStore } from './lib/drafts.js';
 import { createImprovementStore, readImprovementSettings } from './lib/improvements.js';
+import { publishPage } from './lib/publish-page.js';
 import { draftPages } from './lib/draft-pages.js';
 
 const projectDirectory = fileURLToPath(new URL('.', import.meta.url));
@@ -197,6 +198,20 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data') 
         } catch (error) {
           if (!error.status) throw error;
           return send(error.status, page('改稿の取り込み', improvementPage(improvement, raw, error.message)));
+        }
+      }
+      const publishMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})\/publish$/);
+      if (publishMatch && ['GET', 'POST'].includes(request.method)) {
+        const draft = await draftStore.get(publishMatch[1]);
+        if (request.method === 'GET') return send(200, page('公開準備', publishPage(draft, escapeHtml)));
+        const form = await readForm(request, host);
+        try {
+          await draftStore.update(draft.id, Number(form.get('revision')), Object.fromEntries(form), 'publish');
+          response.writeHead(303, { Location: `/drafts/${draft.id}/publish` });
+          return response.end();
+        } catch (error) {
+          if (!error.status) throw error;
+          return send(error.status, page('公開準備', publishPage(await draftStore.get(draft.id), escapeHtml, error.message)));
         }
       }
       const draftMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})$/);

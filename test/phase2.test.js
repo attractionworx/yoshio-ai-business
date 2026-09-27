@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir } from 'node:fs/promises';
@@ -6,8 +7,7 @@ import { createApp } from '../server.js';
 import { buildPrompt, PROMPT_VERSION, contentFields } from '../lib/content.js';
 
 test('Phase 2: 企画→依頼文→取り込み→編集→確認→再編集→再生成・履歴・再起動', async t => {
-  await mkdir('data/test-runs', { recursive: true });
-  const directory = await mkdtemp(path.resolve('data/test-runs/phase2-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'yoshio-phase2-'));
   async function start() {
     const server = createApp({ dataDirectory: directory });
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });

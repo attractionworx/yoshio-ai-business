@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, mkdtemp, mkdir, readdir } from 'node:fs/promises';
@@ -50,8 +51,7 @@ const invalidInputs = [
 for (const [name, raw] of invalidInputs) test(`不正な入力は拒否：${name}`, () => assert.throws(() => parseImport(raw, planId), { status: 400 }));
 
 test('HTTP: 補正プレビューは未保存、確認後のみ保存、原文保持、不正入力は保存ゼロ', async t => {
-  await mkdir('data/test-runs', { recursive: true });
-  const directory = await mkdtemp(path.resolve('data/test-runs/import-'));
+  const directory = await mkdtemp(path.join(tmpdir(), 'yoshio-import-'));
   const server = createApp({ dataDirectory: directory });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   t.after(() => new Promise(resolve => server.close(resolve)));

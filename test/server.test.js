@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
@@ -5,9 +6,9 @@ import path from 'node:path';
 import { createApp } from '../server.js';
 
 test('企画の保存・再起動後の表示・入力検証・外部サイトからの保存拒否', async t => {
-  // 検証データもプロジェクト内のGit対象外フォルダに保存します。
+  // 実データと分離し、検証データはOSの一時フォルダに保存します。
   const { mkdir } = await import('node:fs/promises');
-  const testRoot = path.resolve('data/test-runs');
+  const testRoot = tmpdir();
   await mkdir(testRoot, { recursive: true });
   const dataDirectory = await mkdtemp(path.join(testRoot, 'run-'));
   async function start() {

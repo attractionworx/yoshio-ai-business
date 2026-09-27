@@ -1,15 +1,14 @@
+import { tmpdir } from 'node:os';
 // インストール済みChromeで実際にフォームを操作する確認用スクリプト。
-// Chromeの専用プロフィールと検証記録は、Git対象外のdata/に保存します。
+// Chromeの専用プロフィールと架空データはOSの一時フォルダに保存します。
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, writeFile, readdir } from 'node:fs/promises';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { createApp } from '../server.js';
 
-const root = fileURLToPath(new URL('../', import.meta.url));
-const directory = path.join(root, 'data/browser-phase2-1');
+const directory = await mkdtemp(path.join(tmpdir(), 'yoshio-browser-phase2-1-'));
 await mkdir(directory, { recursive: true });
 const dataDirectory = await mkdtemp(path.join(directory, 'run-'));
 const server = createApp({ dataDirectory });

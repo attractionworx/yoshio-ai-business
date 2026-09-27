@@ -25,3 +25,32 @@ if (editor && document.querySelector('.error')) {
   const button = document.querySelector('[data-improve] button');
   if (button) { button.disabled = true; button.textContent = '保存エラーを解決してから改善依頼文を作る'; }
 }
+
+function blockPublishLink() {
+  const section = document.querySelector('[data-publish-link]');
+  if (section) {
+    section.querySelector('a')?.remove();
+    section.querySelector('p').textContent = '編集内容を保存し、確認済みにしてから公開準備へ進んでください。';
+  }
+}
+editor?.addEventListener('input', blockPublishLink);
+if (editor && document.querySelector('.error')) blockPublishLink();
+
+document.querySelector('[data-publish]')?.addEventListener('change', () => {
+  document.getElementById('publish-change').textContent = '変更は未保存です。公開前チェックまたは公開準備OKボタンで保存してください。';
+  document.getElementById('publish-status').textContent = '未チェック（変更は未保存）';
+  document.querySelectorAll('[data-publication-copy]').forEach(button => { button.disabled = true; });
+});
+document.querySelectorAll('[data-publication-copy]').forEach(button => {
+  button.addEventListener('click', async () => {
+    const field = document.getElementById(button.dataset.publicationCopy);
+    const message = document.getElementById(`${field.id}-message`);
+    try {
+      await navigator.clipboard.writeText(field.value);
+      message.textContent = 'コピーしました。公開先で最終確認してください。';
+    } catch {
+      field.focus(); field.select();
+      message.textContent = 'コピーに失敗しました。選択した文章をCommand+C（WindowsではCtrl+C）でコピーしてください。';
+    }
+  });
+});
