@@ -47,4 +47,9 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 fieldset { border: 1px solid #dfe6e0; border-radius: 8px; margin: 16px 0; min-width: 0; }
 .choice { display: flex; align-items: baseline; gap: 10px; font-weight: 400; }
 .choice input { width: auto; flex-shrink: 0; }
+.offer-editor fieldset { padding: 16px; }
+.offer-editor [data-array-item] { border-left: 3px solid #b8c9c0; padding: 12px; margin: 12px 0; }
+.offer-editor .secondary { width: auto; padding: 8px 14px; margin: 8px 0; }
+.offer-group { border-top: 1px solid #dfe6e0; margin-top: 20px; }
+.offer-value p { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
 .workflow li, .workflow p { overflow-wrap: anywhere; }

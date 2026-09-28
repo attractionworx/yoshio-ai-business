@@ -13,6 +13,10 @@ import { createDraftStore } from './lib/drafts.js';
 import { createImprovementStore, readImprovementSettings } from './lib/improvements.js';
 import { publishPage } from './lib/publish-page.js';
 import { draftPages } from './lib/draft-pages.js';
+import { createOfferStore } from './lib/offers/store.js';
+import { parseOfferForm } from './lib/offers/form.js';
+import { offerPages } from './lib/offer-pages.js';
+import { activeFindings } from './lib/offers/ui-guidance.js';
 
 const projectDirectory = fileURLToPath(new URL('.', import.meta.url));
 const mediaOptions = ['ブログ', 'note', 'X', 'Instagram', 'YouTube'];
@@ -38,7 +42,7 @@ function page(title, content) {
 <title>${escapeHtml(title)} | Yoshio AI Business</title>
 <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
 <body><header><a class="brand" href="/">Yoshio AI Business</a>
-<span class="badge">ローカル企画ノート</span></header>
+<span class="badge">ローカル企画ノート</span><a href="/offers">案件管理</a></header>
 <main>${content}</main>
 <footer>このMacに企画を保存します。OpenAI直接生成は確認後に企画情報を送信します。自動投稿は行いません。</footer></body></html>`;
 }
@@ -73,6 +77,7 @@ function formatDate(value) {
 }
 
 const generationViews = generationPages(escapeHtml);
+const offerViews = offerPages(escapeHtml);
 const { workflow, editor, importPreview, improvementPage } = draftPages({ escapeHtml, formatDate });
 
 function detailPage(plan, drafts = [], raw = '', error = '') {
@@ -89,6 +94,7 @@ function requestError(message, status = 400) {
 
 // テスト時は一時フォルダを渡し、実際の企画データから分離できます。
 export function createApp({ dataDirectory = path.join(projectDirectory, 'data'), generationOptions = {} } = {}) {
+  const offerStore = createOfferStore(dataDirectory);
   const draftStore = createDraftStore(dataDirectory);
   const improvementStore = createImprovementStore(dataDirectory);
   const generation = createGenerationService({ ...generationOptions, dataDirectory, draftStore });
@@ -132,6 +138,46 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
         throw requestError('このアプリはlocalhostから開いてください。', 403);
       }
       const url = new URL(request.url, `http://${host}`);
+      if (request.method === 'GET' && url.pathname === '/offers.js') return send(200, await readFile(path.join(projectDirectory, 'public/offers.js')), 'text/javascript; charset=utf-8');
+      if (request.method === 'GET' && url.pathname === '/offer-helpers.js') return send(200, await readFile(path.join(projectDirectory, 'public/offer-helpers.js')), 'text/javascript; charset=utf-8');
+      if (url.pathname === '/offers' || url.pathname.startsWith('/offers/')) {
+        let offerInput;
+        try {
+          const match = url.pathname.match(/^\/offers\/([a-f0-9-]{36})(?:\/(edit)|\/revisions\/([1-9]\d*))?$/);
+          if (request.method === 'GET') {
+            if (url.pathname === '/offers') return send(200, page('案件管理', offerViews.list(await offerStore.list())));
+            if (url.pathname === '/offers/new') return send(200, page('案件登録', offerViews.form()).replace('</head>', '<script type="module" src="/offers.js"></script></head>'));
+            if (match) {
+              const history = await offerStore.history(match[1]);
+              const offer = match[3] ? history.find(item => item.revision === Number(match[3])) : history.at(-1);
+              if (!offer) throw requestError('案件が見つかりません。', 404);
+              return send(200, page('案件管理', match[2] ? offerViews.form(offer) : offerViews.detail(offer, history, Boolean(match[3])))
+                .replace('</head>', '<script type="module" src="/offers.js"></script></head>'));
+            }
+          }
+          if (request.method === 'POST' && (url.pathname === '/offers' || match?.[2])) {
+            if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+            const form = await readForm(request, host, 2_000_000);
+            const parsed = parseOfferForm(form, Boolean(match));
+            offerInput = parsed.input;
+            if (match && parsed.id !== match[1]) throw requestError('案件IDは変更できません。');
+            const saved = match ? await offerStore.update(match[1], parsed.revision, parsed.input)
+              : await offerStore.create(parsed.input, parsed.id ? { id: parsed.id } : {});
+            response.writeHead(303, { Location: `/offers/${saved.id}` });
+            return response.end();
+          }
+          throw requestError('ページが見つかりません。', 404);
+        } catch (error) {
+          const status = [400, 403, 404, 409, 413, 415, 503].includes(error.status) ? error.status : 500;
+          const findings = status === 400 ? activeFindings(offerInput) : [];
+          const message = ({ 400: '入力を確認してください。必須項目、IDの重複、出典参照、日時、確認状態、利用区分、秘密情報の混入がないか確認してください。activeには確認済みの条件・禁止表現・CTAとURLが必要です。',
+            403: 'このアプリの案件入力画面から保存してください。', 404: '案件またはページが見つかりません。',
+            409: 'IDの重複、古いrevision、または別の更新処理を検出しました。最新版を開き直してください。',
+            413: '入力が大きすぎます。', 415: 'フォーム形式で送信してください。' })[status] || '案件情報を安全に読み書きできません。記録を削除せず確認してください。';
+          // 例外や入力値は表示・ログ出力しない。秘密情報を含む可能性があるため再描画もしない。
+          return send(status, page('案件の保存・表示エラー', `<section class="card"><h1>処理を完了できませんでした</h1><p class="error" role="alert">${message}</p>${findings.length ? `<h2>有効化に向けて確認する項目</h2><p>入力支援の案内です。これ以外の不正な入力も保存時に検証します。成果地点の番号は画面の並び順です。</p><ul>${findings.map(finding => `<li>${escapeHtml(finding)}</li>`).join('')}</ul>` : ''}<p>送信内容はこの画面に再表示しません。ブラウザで戻って修正するか、案件一覧から最新版を開いてください。</p><a href="/offers">案件一覧へ</a></section>`));
+        }
+      }
       if (request.method === 'GET' && url.pathname === '/style.css') {
         return send(200, await readFile(path.join(projectDirectory, 'public/style.css')), 'text/css; charset=utf-8');
       }
