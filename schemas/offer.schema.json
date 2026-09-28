@@ -1,0 +1,464 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AffiliateOffer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "revision",
+    "name",
+    "advertiserName",
+    "asp",
+    "status",
+    "validFrom",
+    "validUntil",
+    "reviewDueAt",
+    "sources",
+    "facts",
+    "targetAudience",
+    "sellingPoints",
+    "prohibitedExpressions",
+    "conversions",
+    "disclosure",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 5000
+    },
+    "advertiserName": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        }
+      ]
+    },
+    "asp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "programId"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "programId": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            }
+          ]
+        }
+      }
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "active",
+        "paused",
+        "ended"
+      ]
+    },
+    "validFrom": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "format": "date-time"
+        }
+      ]
+    },
+    "validUntil": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "format": "date-time"
+        }
+      ]
+    },
+    "reviewDueAt": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "format": "date-time"
+        }
+      ]
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "facts": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/statement"
+      }
+    },
+    "targetAudience": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/statement"
+      }
+    },
+    "sellingPoints": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/statement"
+      }
+    },
+    "prohibitedExpressions": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/statement"
+      }
+    },
+    "conversions": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/conversion"
+      }
+    },
+    "disclosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "text",
+        "placements"
+      ],
+      "properties": {
+        "required": {
+          "const": true
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "placements": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "enum": [
+              "bodyStart",
+              "cta",
+              "social"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "label",
+        "publicUrl",
+        "checkedAt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "kind": {
+          "enum": [
+            "asp_material",
+            "advertiser_material",
+            "user_provided"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "publicUrl": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "uri",
+              "maxLength": 4000
+            }
+          ]
+        },
+        "checkedAt": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "date-time"
+            }
+          ]
+        }
+      }
+    },
+    "statement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "category",
+        "text",
+        "origin",
+        "sourceIds",
+        "verification",
+        "usage"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "category": {
+          "enum": [
+            "price",
+            "track_record",
+            "effect",
+            "feature",
+            "audience",
+            "selling_point",
+            "eligibility",
+            "approval",
+            "rejection",
+            "prohibition",
+            "reward",
+            "other"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "origin": {
+          "enum": [
+            "advertiser",
+            "asp",
+            "editor"
+          ]
+        },
+        "sourceIds": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+          },
+          "uniqueItems": true
+        },
+        "verification": {
+          "enum": [
+            "unverified",
+            "source_checked"
+          ]
+        },
+        "usage": {
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        }
+      }
+    },
+    "reward": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value",
+        "currency",
+        "evidence"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "fixed",
+            "percentage"
+          ]
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0
+        },
+        "currency": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000,
+              "pattern": "^[A-Z]{3}$"
+            }
+          ]
+        },
+        "evidence": {
+          "$ref": "#/$defs/statement"
+        }
+      }
+    },
+    "conversion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "status",
+        "reward",
+        "eligibility",
+        "approvalConditions",
+        "rejectionConditions",
+        "affiliateUrl",
+        "ctaLabel"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "status": {
+          "enum": [
+            "draft",
+            "active",
+            "paused",
+            "ended"
+          ]
+        },
+        "reward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/reward"
+            }
+          ]
+        },
+        "eligibility": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/statement"
+          }
+        },
+        "approvalConditions": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/statement"
+          }
+        },
+        "rejectionConditions": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/statement"
+          }
+        },
+        "affiliateUrl": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "format": "uri",
+              "maxLength": 4000
+            }
+          ]
+        },
+        "ctaLabel": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/statement"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

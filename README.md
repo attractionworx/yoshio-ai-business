@@ -369,3 +369,17 @@ Chrome検証もFake Provider＋OS一時フォルダを使用し、生成前確�
 ### 後半で初めて行う作業
 
 実OpenAI Provider、実モデルと料金表の選定、環境変数によるキー受け渡し、OpenAI側の予算制限設定、対象企画を送る同意表示、実料金台帳の分離、明示承認付き少額接続試験が必要です。今回のFake動作確認は実モデルの品質や実APIへの接続成功を保証するものではありません。
+
+## 10. Phase 4・ステップ1：案件データ層
+
+`schemas/offer.schema.json`、`lib/offers/validation.js`、`lib/offers/store.js`に案件の形式・検証・保存を追加しました。管理画面、企画への選択、AI生成との接続、実案件の登録はまだありません。このデータ層はネットワーク通信を行わず、既存企画・下書きの形式やファイルも変更しません。
+
+- `createOfferStore(dataDirectory)`の`create(input)`で登録、`update(id, expectedRevision, input)`で全項目を置換更新します。`input`はスキーマの業務項目すべてを含め、`id / schemaVersion / revision / createdAt / updatedAt`はストアが付与します。移入用に`create(input, { id })`も使用できますが、既存IDは拒否します。
+- `get(id)`は最新版、`list()`は案件一覧、`history(id)`は古い順の全revisionを返します。状態は`draft / active / paused / ended`。停止も更新で記録し、過去版は保持します。
+- `<dataDirectory>/offers/<UUID>.json`に全revisionをまとめ、一時ファイルからのrenameで保存します。古いrevisionの更新を拒否し、ロックで別ストアとの同時書き込みも防止します。破損履歴や残存ロックは自動修復・削除しません。中断後は書き込み処理がないことを確認し、バックアップと照合して復旧してください。通常利用では`data/`全体をバックアップします。
+- 出典・statement・成果地点のIDは、それぞれの種類内で案件全体に一意です。`source_checked`には存在する出典と確認日時が必要です。これは資料との照合済みを示し、広告効果の客観的な証明を意味しません。日時はタイムゾーン付きISO形式（秒必須、小数秒は3桁まで）です。
+- 空の条件配列は未確認として保存します。有効な成果地点には確認済みの対象条件・成果条件・否認条件と公開可能なCTA、URLが必要です。案件の有効化には有効な成果地点と確認済みの禁止表現が必要です。「条件なし」は、資料に明記されている場合だけ出典付きstatementで登録してください。
+- `getUsableStatements(offer, conversionId, now)`は有効期間内のactive案件・成果地点から、確認済みの`publishable`と`constraint_only`を分けて返すデータ層の関数です。`unverified`、`internal_only`、別成果地点の情報は返しません。期限・再確認期限の到達時も空になります。AI生成への接続はしていません。
+- 未知の項目、認証情報入りURL、既知のAPIキー形式やCookie・パスワード等の記述を拒否します。入力値をエラーへ転載しません。ただし、名前や形式の分からない秘密文字列を完全に識別することはできません。認証情報や管理画面の全文は入力せず、必要な案件条件だけを登録してください。
+
+追加テストは`test/phase4-offers.test.js`です。`npm test`で既存テストと一緒に実行し、架空データとOS一時フォルダのみを使用します。外向き通信は既存のnetwork guardで遮断します。
