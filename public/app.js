@@ -60,3 +60,43 @@ document.querySelector('[data-generate]')?.addEventListener('submit', event => {
   event.currentTarget.querySelector('button').disabled = true;
   event.currentTarget.querySelector('[data-generation-message]').textContent = 'AIで生成しています。完了までこの画面を閉じずにお待ちください。';
 });
+
+// 選択肢は表示用の最小データだけ。保存時はサーバーで履歴・所属を再検証する。
+const planOffer = document.querySelector('[data-plan-offer]');
+if (planOffer) {
+  const offer = planOffer.querySelector('[name=offerId]');
+  const conversion = planOffer.querySelector('[name=conversionId]');
+  const revision = planOffer.querySelector('[name=offerRevision]');
+  const reason = planOffer.querySelector('[name=selectionReason]');
+  const choices = [...conversion.options].slice(1).map(option => option.cloneNode(true));
+  function updateRevision() {
+    const saved = offer.value === planOffer.dataset.savedOffer && conversion.value === planOffer.dataset.savedConversion;
+    revision.value = offer.value ? (saved ? planOffer.dataset.savedRevision : offer.selectedOptions[0].dataset.revision) : '';
+    planOffer.querySelector('[data-binding-revision]').textContent = revision.value ? `使用する案件 revision ${revision.value}（保存時に再確認）` : '';
+    conversion.required = Boolean(offer.value);
+    conversion.disabled = !offer.value;
+    reason.disabled = !offer.value;
+  }
+  function filterConversions(selected = '') {
+    conversion.replaceChildren(new Option('成果地点を選択してください', ''));
+    for (const option of choices.filter(option => option.dataset.offer === offer.value)) {
+      const copy = option.cloneNode(true);
+      copy.selected = copy.value === selected;
+      conversion.append(copy);
+    }
+    conversion.value = selected;
+    updateRevision();
+  }
+  offer.addEventListener('change', () => {
+    if (!offer.value) reason.value = '';
+    filterConversions(); // 成果地点は自動選択しない。
+  });
+  conversion.addEventListener('change', updateRevision);
+  filterConversions(conversion.value);
+  planOffer.dataset.ready = 'true';
+  document.querySelector('[data-plan-form]').addEventListener('submit', () => {
+    // disabledの空欄も明示送信し、既存紐付けの解除と欠落を区別する。
+    conversion.disabled = false;
+    reason.disabled = false;
+  });
+}

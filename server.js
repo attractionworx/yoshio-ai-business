@@ -3,7 +3,7 @@ import { createOpenAIProvider } from './lib/ai/openai-provider.js';
 import { openaiConfig } from './lib/ai/config.js';
 import { generationPages } from './lib/generation-pages.js';
 import http from 'node:http';
-import { readFile, writeFile, mkdir, readdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, rename, rmdir, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -17,6 +17,8 @@ import { createOfferStore } from './lib/offers/store.js';
 import { parseOfferForm } from './lib/offers/form.js';
 import { offerPages } from './lib/offer-pages.js';
 import { activeFindings } from './lib/offers/ui-guidance.js';
+
+import { bindingFields, resolvePlanOffer, planOfferViews } from './lib/plan-offer.js';
 
 const projectDirectory = fileURLToPath(new URL('.', import.meta.url));
 const mediaOptions = ['ブログ', 'note', 'X', 'Instagram', 'YouTube'];
@@ -47,7 +49,9 @@ function page(title, content) {
 <footer>このMacに企画を保存します。OpenAI直接生成は確認後に企画情報を送信します。自動投稿は行いません。</footer></body></html>`;
 }
 
-function formPage(plans, values = {}, error = '') {
+function formPage(plans, values = {}, error = '', offers = []) {
+  const editing = Boolean(values.id);
+  const binding = values.offerBinding;
   const inputs = fields.map(([key, label, limit]) => {
     const required = key === 'theme' || key === 'medium';
     let input;
@@ -62,11 +66,11 @@ function formPage(plans, values = {}, error = '') {
     return `<div class="field"><label for="${key}">${label} <span class="hint">${required ? '必須' : '任意'}</span></label>${input}</div>`;
   }).join('');
 
-  return page('企画を作成', `<section class="intro"><p class="eyebrow">アイデアを、次の一歩へ。</p>
-<h1>コンテンツの企画を作る</h1><p>テーマと届けたい相手を整理して、制作の準備を始めましょう。</p></section>
-<div class="layout"><section class="card"><h2>新しい企画</h2>
+  return page(editing ? '企画を編集' : '企画を作成', `<section class="intro"><p class="eyebrow">アイデアを、次の一歩へ。</p>
+<h1>${editing ? 'コンテンツの企画を編集' : 'コンテンツの企画を作る'}</h1><p>テーマと届けたい相手を整理して、制作の準備を始めましょう。</p></section>
+<div class="layout"><section class="card"><h2>${editing ? '企画を編集' : '新しい企画'}</h2>
 ${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}
-<form method="post" action="/plans">${inputs}<button type="submit">企画を作成</button>
+<form method="post" action="${editing ? `/plans/${values.id}/edit` : '/plans'}" data-plan-form>${editing ? `<input type="hidden" name="planRevision" value="${escapeHtml(values.revision || 1)}">` : ''}${inputs}${bindingViews.form(offers, binding)}${binding ? bindingViews.detail(binding, offers.find(offer => offer.id === binding.offerId)) : ''}<button type="submit">${editing ? '企画を保存' : '企画を作成'}</button>
 <p class="hint">入力内容を整理して保存します。保存後、Codexへの依頼文を作成できます。</p></form></section>
 <section class="card saved"><h2>保存した企画 <span class="count">${plans.length}</span></h2>
 ${plans.length ? `<ul class="plan-list">${plans.map(plan => `<li><a href="/plans/${plan.id}">${escapeHtml(plan.theme)}</a><p class="hint">${escapeHtml(plan.medium)} · ${formatDate(plan.createdAt)}</p></li>`).join('')}</ul>` : '<p class="muted">まだ企画はありません。<br>最初のアイデアを保存してみましょう。</p>'}</section></div>`);
@@ -76,16 +80,17 @@ function formatDate(value) {
   return escapeHtml(new Date(value).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }));
 }
 
+const bindingViews = planOfferViews(escapeHtml);
 const generationViews = generationPages(escapeHtml);
 const offerViews = offerPages(escapeHtml);
 const { workflow, editor, importPreview, improvementPage } = draftPages({ escapeHtml, formatDate });
 
-function detailPage(plan, drafts = [], raw = '', error = '') {
+function detailPage(plan, drafts = [], raw = '', error = '', currentOffer = null) {
   return page(plan.theme, `<a class="back" href="/">← 企画一覧・新規作成へ</a>
 <article class="card detail"><p class="eyebrow">保存済みの企画</p><h1>${escapeHtml(plan.theme)}</h1>
-<p class="hint">作成日時：${formatDate(plan.createdAt)}（日本時間）</p>
+<a href="/plans/${plan.id}/edit">企画を編集</a><p class="hint">作成日時：${formatDate(plan.createdAt)}（日本時間）</p>
 <dl>${fields.map(([key, label]) => `<div><dt>${label}</dt><dd>${escapeHtml(plan[key] || '未入力')}</dd></div>`).join('')}</dl>
-<p class="notice">この企画をもとに、記事の構成やSNS投稿案を考えていきましょう。</p></article><section class="card detail workflow"><h2>AIで直接下書きを生成</h2><p>生成前確認で送信内容・使用設定・概算を確認できます。</p><a data-direct-generation href="/plans/${plan.id}/generate">AIで下書きを生成</a></section>${workflow(plan, drafts, raw, error)}`);
+${bindingViews.detail(plan.offerBinding, currentOffer)}<p class="notice">この企画をもとに、記事の構成やSNS投稿案を考えていきましょう。</p></article><section class="card detail workflow"><h2>AIで直接下書きを生成</h2><p>生成前確認で送信内容・使用設定・概算を確認できます。</p><a data-direct-generation href="/plans/${plan.id}/generate">AIで下書きを生成</a></section>${workflow(plan, drafts, raw, error)}`);
 }
 
 function requestError(message, status = 400) {
@@ -101,6 +106,11 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
   async function readPlan(id) {
     try { return JSON.parse(await readFile(path.join(dataDirectory, `${id}.json`), 'utf8')); }
     catch (error) { if (error.code === 'ENOENT') throw requestError('企画が見つかりません。', 404); throw error; }
+  }
+  async function currentOffer(plan) {
+    if (!plan.offerBinding) return null;
+    try { return await offerStore.get(plan.offerBinding.offerId); }
+    catch (error) { if ([400, 404, 503].includes(error.status)) return null; throw error; }
   }
   async function readForm(request, host, limit = 100_000) {
     if ((request.headers.origin && request.headers.origin !== `http://${host}`) || request.headers['sec-fetch-site'] === 'cross-site') throw requestError('このアプリの入力画面から保存してください。', 403);
@@ -183,24 +193,46 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
       }
       if (request.method === 'GET' && url.pathname === '/app.js') return send(200, await readFile(path.join(projectDirectory, 'public/app.js')), 'text/javascript; charset=utf-8');
       if (request.method === 'GET' && url.pathname === '/') {
-        return send(200, formPage(await listPlans()));
+        return send(200, formPage(await listPlans(), {}, '', await offerStore.list()));
       }
-      if (request.method === 'POST' && url.pathname === '/plans') {
+      const editPlanMatch = url.pathname.match(/^\/plans\/([a-f0-9-]{36})\/edit$/);
+      if (request.method === 'GET' && editPlanMatch) {
+        return send(200, formPage(await listPlans(), await readPlan(editPlanMatch[1]), '', await offerStore.list()));
+      }
+      if (request.method === 'POST' && (url.pathname === '/plans' || editPlanMatch)) {
         const form = await readForm(request, host);
+        const allowed = [...fields.map(([key]) => key), ...bindingFields, ...(editPlanMatch ? ['planRevision'] : [])];
+        if ([...form.keys()].some(key => !allowed.includes(key) || form.getAll(key).length !== 1)) throw requestError('企画の入力項目が不正です。');
         const values = Object.fromEntries(fields.map(([key]) => [key, (form.get(key) || '').trim()]));
         let error = '';
         if (!values.theme) error = 'コンテンツのテーマを入力してください。';
         else if (!mediaOptions.includes(values.medium)) error = '媒体を選択肢から選んでください。';
         else if (fields.some(([key, , limit]) => values[key].length > limit)) error = '入力の文字数が上限を超えています。短くして再度保存してください。';
-        if (error) return send(400, formPage(await listPlans(), values, error));
-
-        const plan = { id: randomUUID(), createdAt: new Date().toISOString(), ...values };
+        if (error) throw requestError(error);
+        const id = editPlanMatch?.[1] || randomUUID();
         await mkdir(dataDirectory, { recursive: true, mode: 0o700 });
-        const destination = path.join(dataDirectory, `${plan.id}.json`);
-        // 書き込みが完了してから正式名に変更し、不完全なファイルを一覧に出しません。
-        await writeFile(`${destination}.tmp`, JSON.stringify(plan, null, 2) + '\n', { mode: 0o600 });
-        await rename(`${destination}.tmp`, destination);
-        response.writeHead(303, { Location: `/plans/${plan.id}` });
+        const lock = path.join(dataDirectory, `.plan-${id}.lock`);
+        try { await mkdir(lock, { mode: 0o700 }); }
+        catch (error) { if (error.code === 'EEXIST') throw requestError('企画を別の処理で保存中です。', 409); throw error; }
+        const destination = path.join(dataDirectory, `${id}.json`);
+        const temporary = `${destination}.${randomUUID()}.tmp`;
+        try {
+          const previous = editPlanMatch ? await readPlan(id) : null;
+          if (previous && form.get('planRevision') !== String(previous.revision || 1)) throw requestError('企画が更新されています。編集画面を開き直してください。', 409);
+          // 古いクライアントからの編集で紐付けを暗黙に削除しない。
+          if (previous?.offerBinding && bindingFields.some(key => !form.has(key))) throw requestError('案件の選択内容を確認してください。');
+          const binding = await resolvePlanOffer(form, previous?.offerBinding, offerStore);
+          const plan = { ...(previous || { id, createdAt: new Date().toISOString() }), ...values,
+            revision: previous ? (previous.revision || 1) + 1 : 1 };
+          if (previous) plan.updatedAt = new Date().toISOString();
+          if (binding) plan.offerBinding = binding; else delete plan.offerBinding;
+          await writeFile(temporary, JSON.stringify(plan, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+          await rename(temporary, destination);
+        } finally {
+          await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error; });
+          await rmdir(lock);
+        }
+        response.writeHead(303, { Location: `/plans/${id}` });
         return response.end();
       }
       const generateMatch = url.pathname.match(/^\/plans\/([a-f0-9-]{36})\/generate$/);
@@ -251,7 +283,7 @@ if (generateMatch && ['GET', 'POST'].includes(request.method)) {
           return response.end();
         } catch (error) {
           if (!error.status) throw error;
-          return send(error.status, detailPage(plan, await draftStore.list(plan.id), raw, error.message));
+          return send(error.status, detailPage(plan, await draftStore.list(plan.id), raw, error.message, await currentOffer(plan)));
         }
       }
       const improveMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})\/improve$/);
@@ -323,7 +355,7 @@ if (generateMatch && ['GET', 'POST'].includes(request.method)) {
           if (error.code === 'ENOENT') throw requestError('企画が見つかりません。', 404);
           throw error;
         }
-        return send(200, detailPage(JSON.parse(contents), await draftStore.list(match[1])));
+        return send(200, detailPage(JSON.parse(contents), await draftStore.list(match[1]), '', '', await currentOffer(JSON.parse(contents))));
       }
       throw requestError('ページが見つかりません。', 404);
     } catch (error) {
