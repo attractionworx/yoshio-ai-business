@@ -102,7 +102,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
   const offerStore = createOfferStore(dataDirectory);
   const draftStore = createDraftStore(dataDirectory);
   const improvementStore = createImprovementStore(dataDirectory);
-  const generation = createGenerationService({ ...generationOptions, dataDirectory, draftStore });
+  const generation = createGenerationService({ ...generationOptions, dataDirectory, draftStore, loadPlan: readPlan });
   async function readPlan(id) {
     try { return JSON.parse(await readFile(path.join(dataDirectory, `${id}.json`), 'utf8')); }
     catch (error) { if (error.code === 'ENOENT') throw requestError('企画が見つかりません。', 404); throw error; }
@@ -238,7 +238,10 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
       const generateMatch = url.pathname.match(/^\/plans\/([a-f0-9-]{36})\/generate$/);
 if (generateMatch && ['GET', 'POST'].includes(request.method)) {
         const plan = await readPlan(generateMatch[1]);
-        if (request.method === 'GET') return send(200, page('生成前確認', generationViews.confirmation(plan, generation.confirmation(plan), await generation.summary(), generation.config, await generation.recent(plan.id), '', generationOptions.provider?.ready !== false)));
+        if (request.method === 'GET') {
+          const prepared = await generation.prepareConfirmation(plan);
+          return send(200, page('生成前確認', generationViews.confirmation(plan, prepared.token, await generation.summary(), generation.config, await generation.recent(plan.id), '', generationOptions.provider?.ready !== false, prepared.affiliate)));
+        }
         // 有料操作へ拡張する入口はOrigin必須。署名済み確認トークンも検証。
         if (request.headers.origin !== `http://${host}`) throw requestError('このアプリの生成前確認から実行してください。', 403);
         const form = await readForm(request, host, 10000);

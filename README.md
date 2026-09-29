@@ -427,3 +427,37 @@ Chrome検証もFake Provider＋OS一時フォルダを使用し、生成前確�
 `npm test`は既存135件＋`test/phase4-plan-offers.test.js`の19件＝154件です。実ブラウザ検証は`node scripts/browser-phase4-step3.mjs`で実行できます。Google Chromeと専用一時データを使い、外向き通信を遮断して、選択・保存・案件改訂・paused警告・旧版保持・明示変更・解除・375/1280pxを確認します。
 
 Step 4着手前には、固定revisionと現在statusを生成時にどう扱うか、送信可能項目の限定、確認画面での人間の承認、生成draftに残す根拠の範囲を別途決定してください。Step 3では実案件登録・ASP通信・生成への案件送信は行いません。
+
+### Step 4：固定した案件情報をOpenAI直接生成へ接続
+
+企画詳細の「AIで下書きを生成」から、既存の生成前確認画面を開きます。案件付きOpenAI生成では、固定した案件名・成果地点名・offer revision、現在のstatus／revision、選択理由、送信する案件情報の全項目を確認できます。確認ボタンを押したPOSTだけが生成を実行します。案件の自動選択、最新revisionへの自動追従は行いません。
+
+`lib/ai/affiliate-context.js`が、serverで検証した案件履歴から`offerBinding.offerId / offerRevision / conversionId`に一致する版と成果地点を読みます。現在の案件は生成可否の確認に使用し、本文を固定版へ混ぜません。
+
+| 情報 | 抽出方針 |
+| --- | --- |
+| 案件名・成果地点名 | 固定版から取得。企画側の表示snapshotを送信根拠にしない |
+| facts・targetAudience・sellingPoints | `source_checked`かつ`publishable`で、出典付きのadvertiser／asp由来の本文だけ |
+| 選択成果地点のeligibility・approvalConditions・rejectionConditions | 同じ公開基準で抽出。他成果地点の情報は抽出しない |
+| prohibitedExpressions | 確認済みの`publishable`／`constraint_only`を生成上の禁止事項として使用。公開事実に昇格させない |
+| CTA | 確認済み・公開可能なラベルだけ。URLは含めない |
+| disclosure | schema上必須の広告明示本文・掲載位置だけ |
+| 報酬・reward category・internal_only・unverified・editor由来 | 除外。editor由来は確認状態にかかわらず保守的に除外 |
+| ASP管理情報・出典情報・URL・認証情報 | オブジェクトとして渡さない。URLを含むstatementも除外し、秘密情報は既存の検査で拒否 |
+| 選択理由・各ID・revision・hash | 人間の確認とローカル根拠保存に使用。案件の送信snapshotには含めない |
+
+`constraint_only`の成果条件は公開根拠として送信しません。空の条件配列は「条件なし」ではなく「公開可能な根拠が抽出されていない」ことを表します。必要なCTA／禁止表現を安全に抽出できない場合は生成を停止します。名前や広告明示にURLが含まれる場合も送信せず確認を求めます。通常の企画のテーマ・メモ等はPhase 3と同じ送信対象なので、確認画面で引き続き内容を確認してください。
+
+現在の案件statusが`paused / ended / draft`なら警告を表示し、確認tokenと生成フォームを提供しません。固定版の案件・成果地点がactiveでない場合、現在の成果地点が停止／削除されている場合、固定版または現在版が有効期間外／確認期限超過の場合も停止します。企画の紐付けや案件履歴は変更しません。
+
+署名付き・15分期限のconfirmationは、従来の企画／設定hashに加え、紐付け・公開snapshotの安定したSHA-256 hash・現在status／revisionを検証します。案件が更新されると古い確認は拒否されますが、新しい確認でも送信本文は元の固定版です。状態変更後にactiveへ復帰しても再確認が必要です。POST時と予算予約後の送信直前に再検証します。送信開始後の状態変更は、既に送信した要求を取り消すものではありません。
+
+案件付きpromptは`direct-affiliate-v1`です。既存7項目と共通検証を維持し、案件情報を区切った補助資料として追加します。未登録情報・条件・URLの創作、禁止表現の使用、成果地点とCTAの混同、広告明示の削除を禁止します。送信前の抽出・状態検証・確認tokenにより、プロンプトだけに依存しません。案件付き入力はUTF-8バイト長にリクエスト付帯情報の余裕1,024を加え、設定済み入力上限を超える場合は切り捨てず停止します。厳密なトークン計算ではないため保守的な制限です。
+
+生成draftの`affiliateContext`には`schemaVersion: 1`、`offerId`、`offerRevision`、`conversionId`、`selectionReason`、生成時の`offerName / conversionName`、`contextHash`と実際に送信した公開snapshotを保存します。draft画面で根拠を閲覧できます。案件本体・報酬・内部情報は複製しません。保存待ち／保存失敗でも同じ根拠と生成結果を台帳に保持し、再起動後の「保存だけ再試行」では現在案件を読み直さず、元のsnapshotの形・hash・prompt整合性を確認して保存します。APIの再呼出しや二重draft作成は行いません。案件がその後停止しても、既に生成済みの結果を保存することは可能です。
+
+案件なしのOpenAI生成、既存Fake生成、手動Codex依頼文、改善依頼文、公開処理は従来のままです。Fakeは案件を使用しない固定の架空文章です。改善による子draftへの`affiliateContext`継承や、生成結果の案件条件・広告明示・禁止表現の網羅検査、公開可否の強化は今回追加していません。元draftは保持され、手動改稿は親draft参照で追跡できます。
+
+検証は`npm test`（既存154件＋Step 4の35件＝189件）と`node scripts/browser-phase4-step4.mjs`です。ブラウザ検証はChrome・専用一時データ・架空案件・通信しないOpenAI SDK mockを使い、確認画面→明示生成→根拠保存→案件改訂後の旧版生成→paused時の古い確認拒否と生成停止、および375/1280px表示を確認します。外向き通信は遮断し、実API・実ASP・実案件を使用しません。
+
+Step 5着手前には、案件条件と生成本文の照合範囲、広告明示／禁止表現の検査、改稿時の根拠継承、停止案件を使った既存draftの公開判定、人間による最終確認の範囲を決めてください。Step 4ではこれらの全体的な公開強化は実装しません。
