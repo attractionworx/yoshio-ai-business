@@ -112,3 +112,19 @@ GETではファイルを書き換えない。旧Step 4 draftは下書きの明�
 案件なしは従来条件を維持する。旧Step 5.2の案件付き公開準備OKは再確認が必要。
 現在案件status・期限・conversion・最新revisionの公開判定、コピー直前のサーバー確認、
 改善版の根拠継承、投稿は後続Stepに残す。
+
+## Step 5.4: ローカル現在案件チェック
+
+`publication.affiliate.currentOfferCheck` は機械的な記事検査から分離した、公開判定POST時点のローカルstore観測結果です。
+
+- `schemaVersion: 1`, `checkedAt`（ISO日時）
+- `offerId`, `fixedRevision`, `currentRevision`（読取不可ならnull）, `conversionId`
+- `status`: active / paused / ended / draft / unknown（自由文字列を保存しない）
+- `result`: pass / blocked
+- `reasonCode`: `lib/current-offer-check.js` の固定辞書のみ
+
+毎回サーバーで最新storeを読み、active・固定revision一致・固定conversion active・期間内・再確認期限内を要求します。validFrom / validUntil / reviewDueAtのnullは既存契約の「期間による制限なし」を維持し、永久有効を保証しません。読取失敗や不正状態はblockします。ASP等への通信は行いません。
+
+ready要求でも現在案件チェックがblockなら、その診断と従来条件の不足を`要修正`として保存し、`readyAt`をnullにします。本文・固定context・validationは変更しません。入力の重複・未知キー・古いfingerprint等は従来どおり拒否し、保存しません。成功したチェックがあっても従来のpreflight・人間確認を省略できません。
+
+GETは過去の保存結果を表示するだけでstore再判定・永続更新を行いません。チェック未保存の旧公開準備OKは再利用しません。コピー直前再確認・store変更時の自動失効は未実装です。チェック直後にstoreが更新される競合も、この段階では防止しません。

@@ -4,13 +4,19 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { affiliateDraftFixture } from './fixtures/affiliate-draft.js';
 import { publicationInput } from './fixtures/affiliate-publication.js';
-import { preparePublication } from '../lib/publish.js';
+import { preparePublication as prepareWithCurrentOffer } from '../lib/publish.js';
 import { publishPage } from '../lib/publish-page.js';
 import { affiliateHumanChecks, validationFingerprint, savedAffiliateConfirmation, affiliatePublicationIsCurrent } from '../lib/affiliate-publication.js';
 import { affiliateValidationState } from '../lib/affiliate-validation-lifecycle.js';
 import { contextHash } from '../lib/ai/affiliate-context.js';
 import { createApp } from '../server.js';
 
+// Step 5.3の純粋なgateテストでは、Step 5.4の現在状態チェックを明示的に供給する。
+const preparePublication = (d, input) => prepareWithCurrentOffer(d, input, d.affiliateContext ? {
+  schemaVersion: 1, checkedAt: new Date().toISOString(), offerId: d.affiliateContext.offerId,
+  fixedRevision: d.affiliateContext.offerRevision, currentRevision: d.affiliateContext.offerRevision,
+  conversionId: d.affiliateContext.conversionId, status: 'active', result: 'pass', reasonCode: 'offer-active',
+} : null);
 const ready = d => { d.publication = preparePublication(d, publicationInput(d)); return d; };
 const noAffiliateChecks = d => ({ action: 'ready', titleIndex: '0', experience: 'yes', numbers: 'yes', links: 'yes', validationFingerprint: validationFingerprint(d) });
 const e = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
@@ -100,8 +106,8 @@ test('Step 5.3: 人間確認の不正保存値を表示・再利用しない', a
   const { draft } = await affiliateDraftFixture(t); ready(draft); draft.publication.affiliate.humanConfirmation.warningResolutions[0].reasonCode = 'SYNTHETIC_SECRET';
   assert.equal(savedAffiliateConfirmation(draft), null); assert.ok(!publishPage(draft, e).includes('SYNTHETIC_SECRET'));
 });
-test('Step 5.3: 現在paused/ended・期限・conversion状態は今回のgateで読まない', async t => {
-  const c = await affiliateDraftFixture(t); await c.offers.update(c.offer.id, 1, { ...c.input, status: 'ended' }); const d = await c.drafts.update(c.draft.id, c.draft.revision, publicationInput(c.draft), 'publish'); assert.equal(d.publication.status, '公開準備OK');
+test('Step 5.4: 既存公開gateに現在ended判定を追加', async t => {
+  const c = await affiliateDraftFixture(t); await c.offers.update(c.offer.id, 1, { ...c.input, status: 'ended' }); const d = await c.drafts.update(c.draft.id, c.draft.revision, publicationInput(c.draft), 'publish'); assert.equal(d.publication.status, '要修正'); assert.equal(d.publication.affiliate.currentOfferCheck.reasonCode, 'offer-ended');
 });
 async function httpFixture(t, changes) {
   const c = await affiliateDraftFixture(t, changes); await writeFile(path.join(c.directory, `${c.plan.id}.json`), JSON.stringify(c.plan));
