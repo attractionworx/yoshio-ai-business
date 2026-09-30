@@ -325,7 +325,7 @@ if (generateMatch && ['GET', 'POST'].includes(request.method)) {
         if (request.method === 'GET') return send(200, page('公開準備', publishPage(draft, escapeHtml)));
         const form = await readForm(request, host);
         try {
-          await draftStore.update(draft.id, Number(form.get('revision')), Object.fromEntries(form), 'publish');
+          await draftStore.update(draft.id, Number(form.get('revision')), form, 'publish');
           response.writeHead(303, { Location: `/drafts/${draft.id}/publish` });
           return response.end();
         } catch (error) {

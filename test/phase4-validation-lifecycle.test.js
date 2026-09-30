@@ -14,6 +14,7 @@ import { affiliateValidationState } from '../lib/affiliate-validation-lifecycle.
 import { contextHash } from '../lib/ai/affiliate-context.js';
 import { offerInput } from './fixtures/plan-offer.js';
 import { createApp } from '../server.js';
+import { publicationInput } from './fixtures/affiliate-publication.js';
 
 const now = () => new Date('2026-09-30T00:00:00Z');
 async function setup(t, draftOptions = {}, changes = {}) {
@@ -82,7 +83,7 @@ test('Step 5.2: 検査失敗後の明示再検査で回復・API再実行なし'
 test('Step 5.2: 本文編集で再検査・hash変更・根拠維持・確認公開準備失効', async t => {
   const c = await setup(t); let d = await c.create(); const before = d;
   d = await c.drafts.update(d.id, d.revision, d.edited, 'review');
-  d = await c.drafts.update(d.id, d.revision, { action: 'ready', titleIndex: '0', experience: 'yes', numbers: 'yes', links: 'yes' }, 'publish');
+  d = await c.drafts.update(d.id, d.revision, publicationInput(d), 'publish');
   d.affiliateValidation.humanConfirmation = { confirmedAt: now().toISOString() }; d.humanConfirmation = { ok: true }; await writeFile(c.file(d.id), JSON.stringify(d));
   const edited = await c.drafts.update(d.id, d.revision, { ...d.edited, body: `${c.input.disclosure.text}\n料金は999円です。` }, 'save');
   current(edited); assert.notEqual(edited.affiliateValidation.contentHash, before.affiliateValidation.contentHash);
@@ -157,18 +158,18 @@ test('Step 5.2: draft保存後台帳失敗retryは編集済みdraftを上書き�
   let d = (await c.drafts.list(c.plan.id))[0]; d = await c.drafts.update(d.id, d.revision, { ...d.edited, summary: '人間の編集' }, 'save');
   const retried = await c.service.retrySave(run.id); assert.equal(retried.draftId, d.id); assert.deepEqual(await c.drafts.get(d.id), d); assert.equal(c.calls(), 1);
 });
-test('Step 5.2: 明示再検査は本文・status・publicationを変えない・古いrevision拒否', async t => {
+test('Step 5.2: 明示再検査は本文・status維持・Step 5.3確認publication失効・古いrevision拒否', async t => {
   const c = await setup(t); let d = await c.create(); d = await c.drafts.update(d.id, d.revision, d.edited, 'review');
-  d = await c.drafts.update(d.id, d.revision, { action: 'ready', titleIndex: '0', experience: 'yes', numbers: 'yes', links: 'yes' }, 'publish');
+  d = await c.drafts.update(d.id, d.revision, publicationInput(d), 'publish');
   const rechecked = await c.drafts.update(d.id, d.revision, null, 'revalidate');
-  assert.deepEqual(rechecked.edited, d.edited); assert.deepEqual(rechecked.affiliateContext, d.affiliateContext); assert.deepEqual(rechecked.publication, d.publication); assert.equal(rechecked.status, d.status);
+  assert.deepEqual(rechecked.edited, d.edited); assert.deepEqual(rechecked.affiliateContext, d.affiliateContext); assert.equal(rechecked.publication, undefined); assert.equal(rechecked.status, d.status);
   await assert.rejects(c.drafts.update(d.id, d.revision, null, 'revalidate'), { status: 409 });
 });
-test('Step 5.2: 記事blockをpublish gateへ接続しない', async t => {
+test('Step 5.2: 記事blockの保存を維持しStep 5.3公開gateで拒否', async t => {
   const c = await setup(t, {}, { summary: '絶対成功', body: `${offerInput().disclosure.text}\n絶対成功` }); let d = await c.create();
   d = await c.drafts.update(d.id, d.revision, d.edited, 'review');
-  const ready = await c.drafts.update(d.id, d.revision, { action: 'ready', titleIndex: '0', experience: 'yes', numbers: 'yes', links: 'yes' }, 'publish');
-  assert.equal(ready.publication.status, '公開準備OK'); assert.deepEqual(ready.affiliateValidation, d.affiliateValidation);
+  await assert.rejects(c.drafts.update(d.id, d.revision, publicationInput(d), 'publish'), /block/);
+  assert.deepEqual((await c.drafts.get(d.id)).affiliateValidation, d.affiliateValidation);
 });
 test('Step 5.2: 結果保存に内部情報・URL・source管理情報を追加しない', async t => {
   const c = await setup(t); const d = await c.create(); const raw = JSON.stringify(d.affiliateValidation);

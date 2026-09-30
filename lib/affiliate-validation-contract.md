@@ -76,5 +76,39 @@ checkedAtが新しいだけでは有効にしない。未知の診断値をUIへ
 同じ本文・context・検査versionの安全な結果は再利用し、状態変更だけでは再検査しない。
 GET・get/list・UI状態計算は読取専用。旧draftは操作時に検査する。
 明示再検査はPOST /drafts/:id/affiliate-validation。Origin、単一revision、競合を検証し、
-draft自身のcontextだけを使用する。本文・確認済み・publicationは変更しない。
-案件なし、改善フロー、publish条件、コピー処理、現在案件statusによる公開判定は変更しない。
+draft自身のcontextだけを使用する。本文・確認済みは変更しない。
+Step 5.3以降、検査に束縛されたpublicationは再検査で失効する。
+
+## Step 5.3: 人間確認と公開前チェック
+
+公開準備OKには従来の条件に加え、current、全7項目のblockなし、全warningの個別確認、
+案件事実・条件／禁止表現／広告明示／CTAの4確認を必要とする。infoも真偽承認ではない。
+検出ゼロでも4確認は必須。純粋validatorのseverityを変更しない。
+結果契約はゼロfindingsにも対応し、finding IDの重複は不正とする。
+
+新規検査にはサーバーがaffiliateValidationRunId（UUID）を付ける。既存データは未設定でも読める。
+validationFingerprintはschemaVersion、contentHash、affiliateContextHash、validationVersion、
+findings全体、checkedAt、runIdをcanonical SHA-256でhash化する。
+同じ日時・内容の明示再検査でもrunIdが変わるため、古いフォームの確認を使えない。
+hashは署名ではなく変更検出用。
+
+publication.affiliateにschemaVersion、validationState、validationFingerprint、missing、
+humanConfirmationを保存する。humanConfirmationは次の契約：
+
+- schemaVersion: 1
+- validationFingerprint
+- confirmedAt: 全4確認と全warning確認完了時の日時。それまではnull
+- requiredChecks: affiliateFacts / affiliateProhibited / affiliateDisclosure / affiliateCtaのboolean
+- warningResolutions: findingId、固定reasonCode human-reviewedのみ
+
+公開準備OKは人間の明示ready操作で成立し、check保存の確認完了とは区別する。
+warning確認は個別のcheckboxで送信し、一括確認・未知ID・info/block承認・直接データ注入は拒否する。
+URLSearchParamsの重複は変換前に拒否し、保存処理内で現在のdraft・fingerprintを再評価する。
+診断説明は固定日本語辞書とfield・原文位置のみ。内部情報・URL・本文抜粋は追加しない。
+
+本文編集・再検査では確認を含むpublicationを失効させる。
+読取時もfingerprint・保存確認の契約を照合し、古い確認・公開準備OKを表示上で再利用しない。
+GETではファイルを書き換えない。旧Step 4 draftは下書きの明示再検査へ誘導する。
+案件なしは従来条件を維持する。旧Step 5.2の案件付き公開準備OKは再確認が必要。
+現在案件status・期限・conversion・最新revisionの公開判定、コピー直前のサーバー確認、
+改善版の根拠継承、投稿は後続Stepに残す。
