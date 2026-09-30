@@ -1,7 +1,7 @@
 # Affiliate validation v1（Step 5.1）
 
 この契約は機械的な検出結果であり、事実の真偽、公開許可、署名ではない。
-現在の保存・生成・編集・改善・公開フローには接続しない。
+純粋validator自身は保存・編集・公開処理を行わない。Step 5.2の接続は末尾を参照。
 
 ## 呼出し
 
@@ -53,3 +53,28 @@ warningの確認とblockの修正を区別する。blockはチェックボック
 CTAは欄全体の正規化一致のみinfo。自由文の不一致はwarningで、行動種別を推測しない。
 本文を書き換えず、secret/URL/管理情報/記事抜粋を診断へ複製しない。
 現在status・期限・最新revisionの公開制御は後続Stepで扱う。
+
+## Step 5.2: draftライフサイクル
+
+affiliateContextを持つ直接AI生成draftは、保存予定のedited 7項目と固定revisionで検査し、
+affiliateValidationを本文と同じ原子的保存に含める。記事のblock/warningでも保存成功とする。
+内部エラー、根拠読取失敗、不整合では古い結果を削除し、代わりに次を保存する：
+
+`affiliateValidationFailure: { schemaVersion: 1, code: 'validation-unavailable', attemptedAt, contentHash, affiliateContextHash }`
+
+この状態は検査済みではない。本文・生成原文・固定contextを保持し、明示再検査で回復できる。
+validationFailureはファイル保存失敗ではないため生成台帳はsucceededとする。
+ファイル保存失敗は従来どおりsave-failedとなり、保存retryはAPIを再実行しない。
+executionIdが既に保存済みなら、そのdraftを返し、編集済み本文・検査結果を上書きしない。
+
+共通のaffiliateValidationStateはnot-applicable / unvalidated / current / stale / invalid / failedを返す。
+本文hash・context hash・validationVersionの一致に加え、既知のschema/code/severity/参照/IDを検証する。
+checkedAtが新しいだけでは有効にしない。未知の診断値をUIへ返さない。
+人間確認や未知フィールドを含む古い結果は再利用せず、再検査時に確認データを破棄する。
+
+本文変更で再検査し、従来の確認済み・publication解除を維持する。
+同じ本文・context・検査versionの安全な結果は再利用し、状態変更だけでは再検査しない。
+GET・get/list・UI状態計算は読取専用。旧draftは操作時に検査する。
+明示再検査はPOST /drafts/:id/affiliate-validation。Origin、単一revision、競合を検証し、
+draft自身のcontextだけを使用する。本文・確認済み・publicationは変更しない。
+案件なし、改善フロー、publish条件、コピー処理、現在案件statusによる公開判定は変更しない。

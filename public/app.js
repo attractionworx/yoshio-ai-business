@@ -15,6 +15,12 @@ editor?.addEventListener('input', () => {
   document.getElementById('draft-status').textContent = '編集中（未保存）';
   document.getElementById('edit-message').textContent = '変更を保存した後、内容を読み直して確認済みにしてください。';
   editor.querySelector('[data-review]').disabled = true;
+  const validation = document.querySelector('[data-affiliate-validation]');
+  if (validation) {
+    validation.dataset.validationState = 'unsaved';
+    validation.querySelector('[data-validation-status]').textContent = '編集中（表示中の検査結果は保存済み本文に対するものです）';
+    validation.querySelector('[data-revalidate] button').disabled = true;
+  }
 });
 // 改善依頼は保存済みの版を使用。編集中の文章を置き去りにしないよう誘導します。
 editor?.addEventListener('input', () => {
@@ -24,6 +30,8 @@ editor?.addEventListener('input', () => {
 if (editor && document.querySelector('.error')) {
   const button = document.querySelector('[data-improve] button');
   if (button) { button.disabled = true; button.textContent = '保存エラーを解決してから改善依頼文を作る'; }
+  const revalidate = document.querySelector('[data-revalidate] button');
+  if (revalidate) revalidate.disabled = true;
 }
 
 function blockPublishLink() {

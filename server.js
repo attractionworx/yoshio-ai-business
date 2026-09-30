@@ -100,7 +100,7 @@ function requestError(message, status = 400) {
 // テスト時は一時フォルダを渡し、実際の企画データから分離できます。
 export function createApp({ dataDirectory = path.join(projectDirectory, 'data'), generationOptions = {} } = {}) {
   const offerStore = createOfferStore(dataDirectory);
-  const draftStore = createDraftStore(dataDirectory);
+  const draftStore = createDraftStore(dataDirectory, { offerStore });
   const improvementStore = createImprovementStore(dataDirectory);
   const generation = createGenerationService({ ...generationOptions, dataDirectory, draftStore, loadPlan: readPlan });
   async function readPlan(id) {
@@ -331,6 +331,21 @@ if (generateMatch && ['GET', 'POST'].includes(request.method)) {
         } catch (error) {
           if (!error.status) throw error;
           return send(error.status, page('公開準備', publishPage(await draftStore.get(draft.id), escapeHtml, error.message)));
+        }
+      }
+      const validationMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})\/affiliate-validation$/);
+      if (validationMatch && request.method === 'POST') {
+        const form = await readForm(request, host);
+        if (request.headers.origin !== `http://${host}`) throw requestError('このアプリの入力画面から再検査してください。', 403);
+        if ([...form.keys()].some(key => key !== 'revision') || form.getAll('revision').length !== 1) throw requestError('再検査の入力が不正です。');
+        const draft = await draftStore.get(validationMatch[1]);
+        try {
+          await draftStore.update(draft.id, Number(form.get('revision')), null, 'revalidate');
+          response.writeHead(303, { Location: `/drafts/${draft.id}` });
+          return response.end();
+        } catch (error) {
+          if (!error.status) throw error;
+          return send(error.status, page('下書きの再検査', editor(draft, draft.edited, error.message, draft.revision, await draftStore.list(draft.planId), await readPlan(draft.planId))));
         }
       }
       const draftMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})$/);
