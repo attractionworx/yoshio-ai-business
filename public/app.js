@@ -53,6 +53,40 @@ document.querySelectorAll('[data-publication-copy]').forEach(button => {
   button.addEventListener('click', async () => {
     const field = document.getElementById(button.dataset.publicationCopy);
     const message = document.getElementById(`${field.id}-message`);
+    const preview = button.closest('[data-publish-preview]');
+    if (preview.dataset.copyEndpoint) {
+      // 前回取得した本文は次回の許可に使わない。拒否・通信失敗時にも選択しない。
+      preview.querySelectorAll('textarea').forEach(area => { area.value = ''; });
+      preview.querySelectorAll('button').forEach(b => { b.disabled = true; });
+      message.textContent = 'サーバーで最終再確認しています。';
+      let text;
+      try {
+        const response = await fetch(preview.dataset.copyEndpoint, {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({ revision: preview.dataset.copyRevision, field: field.id.slice('publish-'.length) }),
+        });
+        const result = await response.json();
+        if (!response.ok || result.result !== 'pass' || typeof result.text !== 'string') {
+          message.textContent = result.message || 'コピーできません。公開準備画面を開き直してください。';
+          message.dataset.reasonCode = result.reasonCode;
+          return;
+        }
+        text = result.text;
+      } catch {
+        message.textContent = '最終再確認を完了できません。公開準備画面を開き直してください。';
+        return;
+      }
+      field.value = text;
+      try {
+        await navigator.clipboard.writeText(text);
+        message.textContent = '最終再確認に成功し、コピーしました。公開先でも最終確認してください。真実性や成果は保証しません。';
+      } catch {
+        field.focus(); field.select();
+        message.textContent = '最終再確認に成功しました。選択した文章をCommand+C（WindowsではCtrl+C）でコピーしてください。公開先でも最終確認してください。';
+      }
+      preview.querySelectorAll('button').forEach(b => { b.disabled = false; });
+      return;
+    }
     try {
       await navigator.clipboard.writeText(field.value);
       message.textContent = 'コピーしました。公開先で最終確認してください。';

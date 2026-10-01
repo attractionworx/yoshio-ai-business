@@ -131,7 +131,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
     function send(status, body, type = 'text/html; charset=utf-8') {
       response.writeHead(status, {
         'Content-Type': type,
-        'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+        'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
         'X-Content-Type-Options': 'nosniff',
         // 同じアプリへのPOSTではOriginを保持します。no-referrerだと
         // ブラウザがOrigin: nullを送り、下の送信元チェックで拒否されます。
@@ -293,6 +293,7 @@ if (generateMatch && ['GET', 'POST'].includes(request.method)) {
       if (request.method === 'POST' && improveMatch) {
         const form = await readForm(request, host);
         const draft = await draftStore.get(improveMatch[1]);
+        if (draft.affiliateContext) throw requestError('案件付き下書きの改善依頼は本文の持ち出しと案件根拠の継承に未対応です。下書きで編集・再検査してください。', 409);
         if (Number(form.get('revision')) !== draft.revision) throw requestError('別の画面で更新されています。最新の下書きを開き直して依頼文を作ってください。', 409);
         const settings = readImprovementSettings(form);
         const improvement = await improvementStore.create(await readPlan(draft.planId), draft, settings);
@@ -302,6 +303,8 @@ if (generateMatch && ['GET', 'POST'].includes(request.method)) {
       const improvementMatch = url.pathname.match(/^\/improvements\/([a-f0-9-]{36})$/);
       if (improvementMatch && ['GET', 'POST'].includes(request.method)) {
         const improvement = await improvementStore.get(improvementMatch[1]);
+        const parent = await draftStore.get(improvement.parentDraftId);
+        if (parent.affiliateContext) throw requestError('案件付き下書きの改善依頼文の取得・取り込みは未対応です。親の下書きで編集・再検査してください。', 409);
         if (request.method === 'GET') return send(200, page('改善依頼文', improvementPage(improvement)));
         const form = await readForm(request, host, 4_000_000);
         if (improvement.settings.mode !== 'rewrite') throw requestError('分析結果はドラフトとして取り込めません。');
@@ -317,6 +320,18 @@ if (generateMatch && ['GET', 'POST'].includes(request.method)) {
         } catch (error) {
           if (!error.status) throw error;
           return send(error.status, page('改稿の取り込み', improvementPage(improvement, raw, error.message)));
+        }
+      }
+      const copyMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})\/copy$/);
+      if (copyMatch && request.method === 'POST') {
+        const json = body => send(body.result === 'pass' ? 200 : 409, JSON.stringify(body), 'application/json; charset=utf-8');
+        if (request.headers.origin !== `http://${host}`) return send(403, JSON.stringify({ result: 'blocked', reasonCode: 'invalid-request', message: '公開準備画面からコピーしてください。' }), 'application/json; charset=utf-8');
+        try {
+          const form = await readForm(request, host, 2000);
+          return json(await draftStore.copy(copyMatch[1], form));
+        } catch (error) {
+          // 入力・読取・保存エラーの生データをJSONやログへ転載しない。
+          return send(error.status || 503, JSON.stringify({ result: 'blocked', reasonCode: 'copy-unavailable', message: 'コピー確認を完了できません。下書きと公開準備画面を開き直してください。' }), 'application/json; charset=utf-8');
         }
       }
       const publishMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})\/publish$/);
