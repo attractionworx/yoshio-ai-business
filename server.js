@@ -10,7 +10,7 @@ import path from 'node:path';
 
 import { buildPrompt, contentFields, parseImport, validateContent } from './lib/content.js';
 import { createDraftStore } from './lib/drafts.js';
-import { createImprovementStore, readImprovementSettings } from './lib/improvements.js';
+import { createImprovementStore, readImprovementSettings, readImprovementFields, validateImprovementWork, parseImprovementResult, hasAffiliateProvenance } from './lib/improvements.js';
 import { publishPage } from './lib/publish-page.js';
 import { draftPages } from './lib/draft-pages.js';
 import { createOfferStore } from './lib/offers/store.js';
@@ -293,33 +293,37 @@ if (generateMatch && ['GET', 'POST'].includes(request.method)) {
       if (request.method === 'POST' && improveMatch) {
         const form = await readForm(request, host);
         const draft = await draftStore.get(improveMatch[1]);
-        if (draft.affiliateContext) throw requestError('案件付き下書きの改善依頼は本文の持ち出しと案件根拠の継承に未対応です。下書きで編集・再検査してください。', 409);
+        if ([...url.searchParams].length) throw requestError('改善依頼に未知の入力があります。');
+        readImprovementFields(form, 'create');
         if (Number(form.get('revision')) !== draft.revision) throw requestError('別の画面で更新されています。最新の下書きを開き直して依頼文を作ってください。', 409);
         const settings = readImprovementSettings(form);
-        const improvement = await improvementStore.create(await readPlan(draft.planId), draft, settings);
+        const plan = hasAffiliateProvenance(draft) ? { id: draft.planId } : await readPlan(draft.planId);
+        const improvement = await improvementStore.create(plan, draft, settings);
         response.writeHead(303, { Location: `/improvements/${improvement.id}` });
         return response.end();
       }
       const improvementMatch = url.pathname.match(/^\/improvements\/([a-f0-9-]{36})$/);
       if (improvementMatch && ['GET', 'POST'].includes(request.method)) {
-        const improvement = await improvementStore.get(improvementMatch[1]);
+        let improvement = await improvementStore.get(improvementMatch[1]);
         const parent = await draftStore.get(improvement.parentDraftId);
-        if (parent.affiliateContext) throw requestError('案件付き下書きの改善依頼文の取得・取り込みは未対応です。親の下書きで編集・再検査してください。', 409);
+        if ([...url.searchParams].length) throw requestError('改善依頼に未知の入力があります。');
+        improvement = validateImprovementWork(improvement, parent);
         if (request.method === 'GET') return send(200, page('改善依頼文', improvementPage(improvement)));
         const form = await readForm(request, host, 4_000_000);
+        readImprovementFields(form, 'import');
         if (improvement.settings.mode !== 'rewrite') throw requestError('分析結果はドラフトとして取り込めません。');
         const raw = form.get('result') || '';
         try {
           if (raw.length > 400000) throw requestError('生成結果は400,000文字以内にしてください。');
           const plan = improvement.planSnapshot;
-          const parsed = parseImport(raw, plan.id, { promptVersion: improvement.promptVersion, parentDraftId: improvement.parentDraftId, requestId: improvement.id });
+          const parsed = parseImprovementResult(improvement, raw);
           if (parsed.normalization && form.get('confirmWrap') !== 'yes') return send(200, page('取り込み前の確認', importPreview(plan, parsed, raw, improvement)));
-          const draft = await draftStore.create(plan, parsed, raw, improvement.prompt, improvement);
+          const draft = await draftStore.createImproved(improvement.id, raw);
           response.writeHead(303, { Location: `/drafts/${draft.id}` });
           return response.end();
         } catch (error) {
           if (!error.status) throw error;
-          return send(error.status, page('改稿の取り込み', improvementPage(improvement, raw, error.message)));
+          return send(error.status, page('改稿の取り込み', improvementPage(improvement, improvement.schemaVersion === 2 ? '' : raw, error.message)));
         }
       }
       const copyMatch = url.pathname.match(/^\/drafts\/([a-f0-9-]{36})\/copy$/);

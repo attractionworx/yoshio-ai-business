@@ -128,3 +128,15 @@ GETではファイルを書き換えない。旧Step 4 draftは下書きの明�
 ready要求でも現在案件チェックがblockなら、その診断と従来条件の不足を`要修正`として保存し、`readyAt`をnullにします。本文・固定context・validationは変更しません。入力の重複・未知キー・古いfingerprint等は従来どおり拒否し、保存しません。成功したチェックがあっても従来のpreflight・人間確認を省略できません。
 
 GETは過去の保存結果を表示するだけでstore再判定・永続更新を行いません。チェック未保存の旧公開準備OKは再利用しません。コピー直前再確認・store変更時の自動失効は未実装です。チェック直後にstoreが更新される競合も、この段階では防止しません。
+
+## Step 5.6: 固定案件の改善作業
+
+改善用持ち出しは公開用持ち出しとは別契約です。`validateImprovementWork`はblock、warning、検査失敗、人間未確認を理由に拒否しません。現在案件storeや`checkFinalExport`を許可条件にせず、取得の成功を許可データとして保存しません。
+
+案件付き依頼は`schemaVersion: 2`、`promptVersion: codex-affiliate-improvement-v1`、`purpose: affiliate-improvement-work`です。親ID・依頼時revision・本文7項目とhash・検証済み固定affiliateContextとhash・offerId/offerRevision/conversionId・設定・依頼ID/作成日時・固定情報全体のrequestHashを保存します。企画snapshotはIDのみです。親の固定context全体との一致を検証しますが、回答待ちの親編集は許容します。
+
+取得と取込はschema、hash、binding、設定、保存promptの再構築一致を検証します。hashは変更検出であり署名ではありません。保存領域は既存のローカル信頼境界です。旧案件付き依頼は移行せず、新規依頼を促して拒否します。context欠落時も保存draftの生成・検査・企画snapshot等の案件由来を検出し、案件なしへfallbackしません。
+
+案件promptには依頼時本文・固定安全snapshot・設定と必要な識別情報だけを含め、現在のplanやofferの情報を追加しません。直接生成の`buildAffiliatePrompt`を共有し、analysisでは完成稿JSONを要求しません。既存`safeText`を追加指示・元本文・取り込みrawに適用し、追加指示のURLも拒否します。未知の秘密形式を検出する汎用DLPではありません。
+
+`draftStore.createImproved(requestId, raw)`のみが保存済み依頼を再読込し、固定contextを継承します。汎用createのOpenAI由来制約は維持します。子は新ID・revision 1・未確認・reviewedAt nullで、publication、humanConfirmation、warning resolution、current/finalチェック、親validationを継承しません。同じ本文でも新しいvalidation runを作り、失敗は既存failed契約で保存します。子の公開用コピーには既存Step 5.3〜5.5を改めて適用します。

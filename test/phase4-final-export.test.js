@@ -200,23 +200,27 @@ test('Step 5.5 HTTP: origin, spoofing, secret input fail closed and do not log c
 test('Step 5.5: no outward communication', async t => {
   const before = blockedConnections.length; const c = await ready(t); await c.drafts.copy(c.draft.id, input(c.draft)); assert.equal(blockedConnections.length, before);
 });
-test('Step 5.5: affiliate editor offers no ungated improvement prompt copy', async t => {
+test('Step 5.6: affiliate editor offers work flow without public export permission', async t => {
   const c = await ready(t);
   const html = draftPages({ escapeHtml: e, formatDate: e }).editor(c.draft);
-  assert.ok(!html.includes('data-improve')); assert.match(html, /案件根拠の継承に未対応/);
+  assert.ok(html.includes('data-improve')); assert.match(html, /公開許可ではありません/);
+  assert.ok(!html.includes('data-copy="prompt"'));
 });
-test('Step 5.5: legacy affiliate improvement cannot create ungated plain child', async t => {
+test('Step 5.6: generic improvement create cannot make an ungated plain child', async t => {
   const c = await ready(t);
   const request = await createImprovementStore(c.directory).create(c.plan, c.draft, { options: [], mode: 'rewrite', instructions: '' });
-  await assert.rejects(c.drafts.create(c.plan, { content: c.content }, JSON.stringify(c.content), request.prompt, request), /案件根拠を引き継ぐ仕組みが未対応/);
+  await assert.rejects(c.drafts.create(c.plan, { content: c.content }, JSON.stringify(c.content), request.prompt, request), /保存済み改善依頼/);
   assert.equal((await c.drafts.list(c.plan.id)).length, 1);
 });
-test('Step 5.5 HTTP: affiliate improvement creation, old prompt GET and import blocked', async t => {
+test('Step 5.6 HTTP: safe creation restored; old affiliate prompt GET and import still blocked', async t => {
   const c = await httpFixture(t);
   const request = await createImprovementStore(c.directory).create(c.plan, c.draft, { options: [], mode: 'rewrite', instructions: '' });
+  const legacy = { ...request, schemaVersion: 1, promptVersion: 'codex-improvement-v1' };
+  for (const key of ['purpose', 'affiliateContext', 'sourceContentHash', 'affiliateContextHash', 'offerId', 'offerRevision', 'conversionId', 'requestHash']) delete legacy[key];
+  await writeFile(path.join(c.directory, 'improvements', `${request.id}.json`), JSON.stringify(legacy));
   const before = await readFile(c.file, 'utf8');
   const creation = await fetch(`${c.base}/drafts/${c.draft.id}/improve`, { method: 'POST', headers: { Origin: c.base }, body: new URLSearchParams({ revision: String(c.draft.revision), mode: 'rewrite' }), redirect: 'manual' });
-  assert.equal(creation.status, 409);
+  assert.equal(creation.status, 303);
   for (const method of ['GET', 'POST']) {
     const response = await fetch(`${c.base}/improvements/${request.id}`, { method, ...(method === 'POST' ? { headers: { Origin: c.base }, body: new URLSearchParams({ result: '{}' }) } : {}) });
     assert.equal(response.status, 409); const html = await response.text(); assert.ok(!html.includes(c.draft.edited.body)); assert.ok(!html.includes('data-copy'));
