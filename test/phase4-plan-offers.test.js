@@ -1,3 +1,4 @@
+import { activateFixtureBudget } from './fixtures/ai-budget.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm, readdir } from 'node:fs/promises';
@@ -18,6 +19,7 @@ const selection = offer => ({ offerId: offer.id, offerRevision: String(offer.rev
 const none = { offerId: '', offerRevision: '', conversionId: '', selectionReason: '' };
 async function setup(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'plan-binding-'));
+  await activateFixtureBudget(directory); // Explicit fake/mock-only activation before API-path regression tests.
   const server = createApp({ dataDirectory: directory });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   t.after(async () => { await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); });

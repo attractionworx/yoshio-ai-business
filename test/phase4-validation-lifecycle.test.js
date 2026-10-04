@@ -1,3 +1,4 @@
+import { activateFixtureBudget } from './fixtures/ai-budget.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
@@ -19,6 +20,7 @@ import { publicationInput } from './fixtures/affiliate-publication.js';
 const now = () => new Date('2026-09-30T00:00:00Z');
 async function setup(t, draftOptions = {}, changes = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'affiliate-lifecycle-'));
+  await activateFixtureBudget(directory, { now }); // Explicit fixture activation using the service clock.
   t.after(() => rm(directory, { recursive: true, force: true }));
   const offers = createOfferStore(directory, { now });
   const input = offerInput(); input.prohibitedExpressions[0].text = '絶対成功';

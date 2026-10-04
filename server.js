@@ -1,3 +1,7 @@
+import { createExecutionGate } from './lib/offer-import/execution-gate.js';
+import { createBudgetCoordinator } from './lib/ai/budget-coordinator.js';
+import { budgetPage, parseBudgetActivation } from './lib/ai/budget-pages.js';
+import { createExecutionStore } from './lib/offer-import/execution-store.js';
 import { createGenerationService } from './lib/ai/generation-service.js';
 import { createOpenAIProvider } from './lib/ai/openai-provider.js';
 import { openaiConfig } from './lib/ai/config.js';
@@ -113,6 +117,9 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
   const reflectionViews = reflectionPages(escapeHtml);
   const maintenance = createMaintenanceService(dataDirectory, maintenanceOptions);
   const maintenanceViews = maintenancePages(escapeHtml);
+  const budget = createBudgetCoordinator(dataDirectory, { now: generationOptions.now || (() => new Date()) });
+  const extractionExecutions = createExecutionStore(dataDirectory);
+  const importExecutionReady = createExecutionGate(dataDirectory, extractionExecutions);
   const draftStore = createDraftStore(dataDirectory, { offerStore });
   const improvementStore = createImprovementStore(dataDirectory);
   const generation = createGenerationService({ ...generationOptions, dataDirectory, draftStore, loadPlan: readPlan });
@@ -164,6 +171,18 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
       if (url.pathname === '/maintenance' || url.pathname.startsWith('/maintenance/')) {
         try {
           if (url.search) return send(400, page('管理操作を停止', maintenanceViews.failure()));
+          if (request.method === 'GET' && url.pathname === '/maintenance/ai-budget') {
+            let activation = null; let executions = [];
+            try { activation = await budget.activation(); } catch { /* fixed stop message, no raw error */ }
+            try { executions = (await extractionExecutions.read()).executions.map(e => e.revisions.at(-1)); } catch { /* integrity explains failure */ }
+            return send(200, page('共通AI予算', budgetPage(escapeHtml, activation, executions)));
+          }
+          if (request.method === 'POST' && url.pathname === '/maintenance/ai-budget/activate') {
+            if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+            const policy = parseBudgetActivation(await readForm(request, host, 2000));
+            const activation = await budget.activate(policy, { confirm: true, expectedRevision: 0 });
+            return send(200, page('共通AI予算', budgetPage(escapeHtml, activation)));
+          }
           if (request.method === 'GET' && url.pathname === '/maintenance') return send(200, page('データ保全管理', maintenanceViews.home(await maintenance.list())));
           if (request.method === 'GET' && url.pathname === '/maintenance/integrity') return send(200, page('整合性確認', maintenanceViews.integrity(await maintenance.integrity())));
           if (request.method === 'POST' && ['/maintenance/backups', '/maintenance/dry-run'].includes(url.pathname)) {
@@ -210,6 +229,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
           if (!match) throw requestError('記録が見つかりません。', 404);
           if (request.method === 'GET' && !match[3]) {
             const history = await importStore.history(match[1]);
+            await importExecutionReady(match[1], history[0]);
             const draft = match[2] ? history.find(d => d.revision === Number(match[2])) : history.at(-1);
             if (!draft) throw requestError('記録が見つかりません。', 404);
             return send(200, page('候補レビュー', importViews.detail(draft, history, Boolean(match[2])))
@@ -218,6 +238,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
           if (request.method !== 'POST' || !match[3]) throw requestError('記録が見つかりません。', 404);
           if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
           const form = await readForm(request, host, 100_000);
+          await importExecutionReady(match[1], (await importStore.history(match[1]))[0]);
           const draft = await importStore.get(match[1]);
           const candidate = draft.candidates.find(c => c.id === match[3]);
           if (!candidate) throw requestError('候補が見つかりません。', 404);

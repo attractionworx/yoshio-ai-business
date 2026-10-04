@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ai-budget-activation.schema.json",
+  "title": "ai-budget-activation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "revision",
+    "activatedAt",
+    "approval",
+    "policy",
+    "policyHash",
+    "initialBudget",
+    "generationHash",
+    "extractionHash",
+    "initialGeneration"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "revision": {
+      "const": 1
+    },
+    "activatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "approval": {
+      "const": "human_explicit"
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "version",
+        "realStopMilliYen",
+        "simulationStopMilliYen"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "version": {
+          "type": "string"
+        },
+        "realStopMilliYen": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 1
+            }
+          ]
+        },
+        "simulationStopMilliYen": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 1
+            }
+          ]
+        }
+      }
+    },
+    "policyHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "initialBudget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "month",
+        "real",
+        "simulation"
+      ],
+      "properties": {
+        "month": {
+          "type": "string"
+        },
+        "real": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bookedMilliYen",
+            "reservedMilliYen"
+          ],
+          "properties": {
+            "bookedMilliYen": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reservedMilliYen": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "simulation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bookedMilliYen",
+            "reservedMilliYen"
+          ],
+          "properties": {
+            "bookedMilliYen": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "reservedMilliYen": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "generationHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "extractionHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "initialGeneration": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "hash"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "hash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    }
+  },
+  "description": "Structural contract. Semantic hashes, evidence, money, states and history are strictly validated by the corresponding pure JavaScript validator; this schema alone grants no execution or human verification."
+}

@@ -1,3 +1,4 @@
+import { activateFixtureBudget } from './fixtures/ai-budget.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, readdir, writeFile, unlink } from 'node:fs/promises';
@@ -20,6 +21,7 @@ import { createApp } from '../server.js';
 const plan = () => ({ id: randomUUID(), createdAt: '2026-01-01T00:00:00Z', theme: '架空の検証専用企画', audience: '架空の読者', medium: 'note', purpose: '架空の確認', notes: '実データを使わない' });
 async function setup(options = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'yoshio-phase3-'));
+  await activateFixtureBudget(directory, { now: options.now || (() => new Date()) }); // Explicit fixture activation using the service clock.
   const draftStore = createDraftStore(directory);
   const store = createGenerationStore(directory);
   const service = createGenerationService({ dataDirectory: directory, draftStore, store, ...options });
@@ -139,6 +141,7 @@ test('保存失敗後は保存だけ再試行・重複保存防止・料金は�
   let fail = true;
   let calls = 0;
   const directory = await mkdtemp(path.join(tmpdir(), 'yoshio-save-failure-'));
+  await activateFixtureBudget(directory); // Explicit fake/mock-only activation before API-path regression tests.
   const draftStore = createDraftStore(directory);
   const service = createGenerationService({ dataDirectory: directory, draftStore: { ...draftStore, async create(...args) { if (fail) throw new Error('DO_NOT_EXPOSE_FAKE_SECRET'); return draftStore.create(...args); } },
     provider: { kind: 'fake', async generate(input) { calls++; return createFakeProvider().generate(input); } } });
@@ -278,6 +281,7 @@ test('生成検証の失敗項目を安全なコードで記録し原文・秘�
 
 async function startApp(t, options = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'yoshio-phase3-http-'));
+  await activateFixtureBudget(directory, { now: options.generationOptions?.now || (() => new Date()) }); // Explicit fixture activation using the service clock.
   const server = createApp({ dataDirectory: directory, ...options });
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
   t.after(() => new Promise(resolve => server.close(resolve)));
@@ -291,11 +295,13 @@ async function startApp(t, options = {}) {
 test('HTTP: 確認画面は未実行・明示実行・結果・既存公開準備へ接続', async t => {
   const c = await startApp(t);
   const route = c.planPath + '/generate';
+  const ledgerBeforeGET = await readFile(path.join(c.directory, 'generations/ledger.json'), 'utf8');
   const html = await (await fetch(c.base + route)).text();
   assert.match(html, /生成前確認/);
   assert.match(html, /実料金0円/);
   assert.match(html, /economy/);
-  assert.ok(!(await readdir(c.directory)).includes('generations'));
+  assert.equal(await readFile(path.join(c.directory, 'generations/ledger.json'), 'utf8'), ledgerBeforeGET);
+  assert.equal((await createGenerationStore(c.directory).read()).runs.length, 0); // Activation creates an empty anchor; GET creates no run.
   const token = html.match(/name="token" value="([^"]+)"/)[1];
   assert.equal((await c.post(route, { token, confirm: 'yes', model: 'dangerous' })).status, 400);
   assert.equal((await c.post(route, { token, confirm: 'yes' }, { Origin: 'https://example.com' })).status, 403);

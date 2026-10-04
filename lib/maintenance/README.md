@@ -1,4 +1,4 @@
-# Step 5：ローカルデータ保全（実復元なし）
+# Step 5 / Step 6-0A：ローカルデータ保全（実復元なし）
 
 ## 範囲と既存契約
 
@@ -6,7 +6,7 @@
 Step 1〜4のschema、offer/import保存API、公開検証、intent → offer保存 → resultは変更しない。
 復元・巻戻し・自動修復・自動マージ・履歴削除・公開・active化の経路はない。
 バックアップは企画や生成結果を含むアプリ全体のバックアップではない。
-対象は案件・取り込み・反映監査の三領域だけであり、`.env` や任意のルートファイルは取得しない。
+v1対象は案件・取り込み・反映監査の三領域。Step 6-0Aのv2はAI実行・固定artifact・共通予算を含む。`.env` や任意のルートファイル、独立した企画・draftファイルは取得しない。generation ledgerに含まれる既存のstaged content・planSnapshotは原本の一部として保全する。
 
 ## 一貫バックアップ
 
@@ -58,7 +58,26 @@ hashは破損検出用であり、同じOSユーザーによるmanifestとdigest
 バックアップはローカルの平文で、保存先0700・新規ファイル0600。
 他ディスクへの保全、暗号化、真正性証明は今回の対象外。
 renameは完全トランザクションや停電時の永続性保証を意味しない。
-起動後の利用前にもdry-runで検証する。既存保存層のfsync契約は変更しない。
+起動後の利用前にもdry-runで検証する。offer/import/commit保存層のfsync契約は変更しない。Step 6-0AのAI記録ではfile/directory fsyncと未完了write intentの検出を行う。
+
+## Manifest v2（Step 6-0A）
+
+既存v1の読み取り・厳密検証をそのまま残し、書換えない。
+v1は旧範囲として正常でも、AI実行・共通予算の有効化を保証しない。dry-runでcoverageと注意を表示する。
+AI領域が存在する場合、新規バックアップはv2を作る。全く存在しない旧環境ではv1を維持する。
+
+v2は同じmanifest項目を持ち、schemaVersion=2、contractsは
+`{offer:1, import:1, commit:1, generation:1, extractionExecution:1, extractionArtifact:1, budgetActivation:1, budgetPolicy:1}`。
+directoriesの固定順は `ai-budget → generations → extraction-executions → extraction-artifacts → offer-import-commits → offer-imports → offers`。
+これが新しい共通lock順であり、既存三領域の相対順は変えない。
+新たに許可するファイルは、ai-budgetのactivation.json/initialized、generation/extractionのledger.json/initialized、artifactのUUID.jsonだけ。
+activation内にpolicyを固定保存する。未知パス・write intent・temp・残存lockは停止する。
+
+検査ではgeneration会計、execution全遷移、artifact hash/byte size/対応、既存target offer revision、
+validated extractionのquote、planned import内容hash、saved import初期revision/hash、
+activation policy hashと初期generation会計を照合する。未解決execution・unknownは人間確認必須。
+v2内に必要なtask anchorがない場合も停止し、欠落を空台帳と解釈しない。
+AI領域を含むbackup/dry-runでも実restore・自動修復・履歴削除は行わない。
 
 ## 読み取り専用integrity check
 

@@ -1,3 +1,4 @@
+import { activateFixtureBudget } from './fixtures/ai-budget.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
@@ -38,6 +39,7 @@ function input() {
 }
 async function setup(t, overrides = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'affiliate-generation-'));
+  await activateFixtureBudget(directory, { now: overrides.now || now }); // Explicit fixture activation using the service clock.
   t.after(() => rm(directory, { recursive: true, force: true }));
   const offers = createOfferStore(directory, { now });
   const offer = await offers.create(input());
