@@ -17,6 +17,13 @@ import { createOfferStore } from './lib/offers/store.js';
 import { parseOfferForm } from './lib/offers/form.js';
 import { offerPages } from './lib/offer-pages.js';
 import { activeFindings } from './lib/offers/ui-guidance.js';
+import { createOfferImportStore } from './lib/offer-import/store.js';
+import { offerImportPages, parseReviewForm } from './lib/offer-import/ui.js';
+import { createMaintenanceService } from './lib/maintenance/backup.js';
+import { maintenancePages, parseMaintenanceForm } from './lib/maintenance/pages.js';
+import { createReflectionService } from './lib/offer-import/reflection-service.js';
+import { reflectionPages, reflectionOptions, parseReflectionApproval } from './lib/offer-import/reflection-pages.js';
+import { reflectionHash } from './lib/offer-import/projection.js';
 
 import { bindingFields, resolvePlanOffer, planOfferViews } from './lib/plan-offer.js';
 
@@ -44,7 +51,7 @@ function page(title, content) {
 <title>${escapeHtml(title)} | Yoshio AI Business</title>
 <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
 <body><header><a class="brand" href="/">Yoshio AI Business</a>
-<span class="badge">ローカル企画ノート</span><a href="/offers">案件管理</a></header>
+<span class="badge">ローカル企画ノート</span><a href="/offers">案件管理</a><a href="/offer-imports">候補レビュー</a><a href="/maintenance">データ保全管理</a></header>
 <main>${content}</main>
 <footer>このMacに企画を保存します。OpenAI直接生成は確認後に企画情報を送信します。自動投稿は行いません。</footer></body></html>`;
 }
@@ -98,8 +105,14 @@ function requestError(message, status = 400) {
 }
 
 // テスト時は一時フォルダを渡し、実際の企画データから分離できます。
-export function createApp({ dataDirectory = path.join(projectDirectory, 'data'), generationOptions = {} } = {}) {
+export function createApp({ dataDirectory = path.join(projectDirectory, 'data'), generationOptions = {}, offerImportOptions = {}, maintenanceOptions = {} } = {}) {
+  const importStore = offerImportOptions.store || createOfferImportStore(dataDirectory);
+  const importViews = offerImportPages(escapeHtml);
   const offerStore = createOfferStore(dataDirectory);
+  const reflection = offerImportOptions.reflection || createReflectionService({ dataDirectory, importStore, offerStore });
+  const reflectionViews = reflectionPages(escapeHtml);
+  const maintenance = createMaintenanceService(dataDirectory, maintenanceOptions);
+  const maintenanceViews = maintenancePages(escapeHtml);
   const draftStore = createDraftStore(dataDirectory, { offerStore });
   const improvementStore = createImprovementStore(dataDirectory);
   const generation = createGenerationService({ ...generationOptions, dataDirectory, draftStore, loadPlan: readPlan });
@@ -148,6 +161,76 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
         throw requestError('このアプリはlocalhostから開いてください。', 403);
       }
       const url = new URL(request.url, `http://${host}`);
+      if (url.pathname === '/maintenance' || url.pathname.startsWith('/maintenance/')) {
+        try {
+          if (url.search) return send(400, page('管理操作を停止', maintenanceViews.failure()));
+          if (request.method === 'GET' && url.pathname === '/maintenance') return send(200, page('データ保全管理', maintenanceViews.home(await maintenance.list())));
+          if (request.method === 'GET' && url.pathname === '/maintenance/integrity') return send(200, page('整合性確認', maintenanceViews.integrity(await maintenance.integrity())));
+          if (request.method === 'POST' && ['/maintenance/backups', '/maintenance/dry-run'].includes(url.pathname)) {
+            if (request.headers.origin !== `http://${host}`) throw requestError('このアプリの入力画面から操作してください。', 403);
+            const operation = url.pathname.endsWith('/backups') ? 'backup' : 'dry-run';
+            const backupId = parseMaintenanceForm(await readForm(request, host, 2000), operation);
+            return operation === 'backup' ? send(200, page('バックアップ作成', maintenanceViews.created(await maintenance.create())))
+              : send(200, page('復元dry-run', maintenanceViews.dryRun(await maintenance.dryRun(backupId))));
+          }
+          // No restore route, including explicit approval or repeated POST attempts.
+          return send(404, page('管理操作を停止', maintenanceViews.failure()));
+        } catch (error) { return send([400, 403, 409, 413, 415].includes(error.status) ? error.status : 503, page('管理操作を停止', maintenanceViews.failure())); }
+      }
+      if (request.method === 'GET' && url.pathname === '/offer-import.js') return send(200, await readFile(path.join(projectDirectory, 'public/offer-import.js')), 'text/javascript; charset=utf-8');
+      if (url.pathname === '/offer-imports' || url.pathname.startsWith('/offer-imports/')) {
+        const reflectMatch = url.pathname.match(/^\/offer-imports\/([a-f0-9-]{36})\/(reflection|commit|commits|recover)$/);
+        if (reflectMatch) {
+          const [, id, action] = reflectMatch;
+          try {
+            if (request.method === 'GET' && action === 'reflection') {
+              const draft = await importStore.get(id);
+              const options = reflectionOptions(url.searchParams, draft);
+              const selection = reflectionViews.selection(draft, await offerStore.list(), options);
+              const prepared = options ? await reflection.preview(id, options) : null;
+              return send(200, page('反映プレビュー', selection + (prepared ? reflectionViews.preview(draft, { ...prepared, hash: reflectionHash(prepared.plan) }) : '')));
+            }
+            if (request.method === 'GET' && action === 'commits') return send(200, page('反映記録', reflectionViews.records(id, await reflection.records(id))));
+            if (request.method !== 'POST' || !['commit', 'recover'].includes(action)) throw requestError('操作が見つかりません。', 404);
+            if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+            const token = parseReflectionApproval(await readForm(request, host, 30_000));
+            // Tokens bind the import; never allow a token from another route to authorize this import.
+            const data = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString());
+            if (data.importId !== id) throw requestError('確認対象が異なります。', 400);
+            await reflection[action](token, { approve: true });
+            response.writeHead(303, { Location: `/offer-imports/${id}/commits` }); return response.end();
+          } catch (error) {
+            const status = [400, 403, 404, 409, 413, 415, 503].includes(error.status) ? error.status : 503;
+            return send(status, page('反映停止', importViews.failure(status, id) + `<p><a href="/offer-imports/${id}/commits">反映記録と復旧確認を開く</a></p><p><a href="/offer-imports/${id}/reflection">最新版から反映プレビューを作り直す</a></p>`));
+          }
+        }
+        const match = url.pathname.match(/^\/offer-imports\/([a-f0-9-]{36})(?:\/revisions\/([1-9]\d*)|\/candidates\/(candidate-[1-9]\d*)\/(review|verify))?$/);
+        try {
+          if (request.method === 'GET' && url.pathname === '/offer-imports') return send(200, page('候補レビュー', importViews.list(await importStore.list())));
+          if (!match) throw requestError('記録が見つかりません。', 404);
+          if (request.method === 'GET' && !match[3]) {
+            const history = await importStore.history(match[1]);
+            const draft = match[2] ? history.find(d => d.revision === Number(match[2])) : history.at(-1);
+            if (!draft) throw requestError('記録が見つかりません。', 404);
+            return send(200, page('候補レビュー', importViews.detail(draft, history, Boolean(match[2])))
+              .replace('</head>', '<script src="/offer-import.js" defer></script></head>'));
+          }
+          if (request.method !== 'POST' || !match[3]) throw requestError('記録が見つかりません。', 404);
+          if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+          const form = await readForm(request, host, 100_000);
+          const draft = await importStore.get(match[1]);
+          const candidate = draft.candidates.find(c => c.id === match[3]);
+          if (!candidate) throw requestError('候補が見つかりません。', 404);
+          const parsed = parseReviewForm(form, candidate, match[4] === 'verify');
+          if (parsed.revision !== draft.revision) throw requestError('古い確認です。', 409);
+          await importStore.review(match[1], candidate.id, parsed.revision, parsed.action);
+          response.writeHead(303, { Location: `/offer-imports/${match[1]}` });
+          return response.end();
+        } catch (error) {
+          const status = [400, 403, 404, 409, 413, 415, 503].includes(error.status) ? error.status : 503;
+          return send(status, page('レビュー停止', importViews.failure(status, match?.[1])));
+        }
+      }
       if (request.method === 'GET' && url.pathname === '/offers.js') return send(200, await readFile(path.join(projectDirectory, 'public/offers.js')), 'text/javascript; charset=utf-8');
       if (request.method === 'GET' && url.pathname === '/offer-helpers.js') return send(200, await readFile(path.join(projectDirectory, 'public/offer-helpers.js')), 'text/javascript; charset=utf-8');
       if (url.pathname === '/offers' || url.pathname.startsWith('/offers/')) {

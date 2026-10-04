@@ -1,0 +1,156 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "candidates"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "enum": [
+        1
+      ]
+    },
+    "candidates": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/payload"
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RegulationExtractionCandidates",
+  "description": "AI output only. No approval, verification, offer state, official IDs or timestamps.",
+  "$defs": {
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "enum": [
+            "name",
+            "conversion_name",
+            "disclosure_text",
+            "facts",
+            "targetAudience",
+            "sellingPoints",
+            "prohibitedExpressions",
+            "eligibility",
+            "approvalConditions",
+            "rejectionConditions",
+            "ctaLabel",
+            "reward_evidence",
+            "unmapped"
+          ]
+        },
+        "conversionKey": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+            }
+          ]
+        },
+        "category": {
+          "enum": [
+            "price",
+            "track_record",
+            "effect",
+            "feature",
+            "audience",
+            "selling_point",
+            "eligibility",
+            "approval",
+            "rejection",
+            "prohibition",
+            "reward",
+            "other"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "usage": {
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "enum": [
+            "fact",
+            "restriction",
+            "marketing_goal",
+            "conversion_condition",
+            "unmapped"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "documentId",
+        "blockId",
+        "start",
+        "end",
+        "quote"
+      ],
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "blockId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        }
+      }
+    }
+  }
+}

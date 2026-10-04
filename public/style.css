@@ -53,3 +53,12 @@ fieldset { border: 1px solid #dfe6e0; border-radius: 8px; margin: 16px 0; min-wi
 .offer-group { border-top: 1px solid #dfe6e0; margin-top: 20px; }
 .offer-value p { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 4px; }
 .workflow li, .workflow p { overflow-wrap: anywhere; }
+
+/* Independent candidate review: no offer or publication controls. */
+.import-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; }
+.import-candidate { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #ccc; scroll-margin-top: 1rem; }
+.import-text, .import-review pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.import-review pre { max-height: 30rem; overflow: auto; }
+.import-review input:not([type="checkbox"]), .import-review select, .import-review textarea { max-width: 100%; box-sizing: border-box; }
+.import-verification { border: 1px solid #888; padding: 1rem; margin-top: 1rem; }
+@media (max-width: 700px) { .import-columns { grid-template-columns: minmax(0, 1fr); } }
