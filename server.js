@@ -4,6 +4,9 @@ import { budgetPage, parseBudgetActivation, parseRealApproval, realApprovalPrevi
 import { createExecutionStore } from './lib/offer-import/execution-store.js';
 import { createGenerationService } from './lib/ai/generation-service.js';
 import { createOpenAIProvider } from './lib/ai/openai-provider.js';
+import { createOpenAIExtractionProvider } from './lib/ai/openai-extraction-provider.js';
+import { createExtractionService } from './lib/offer-import/extraction-service.js';
+import { extractionPages, parseExtractionForm, parseExtractionApproval } from './lib/offer-import/extraction-pages.js';
 import { openaiConfig } from './lib/ai/config.js';
 import { generationPages } from './lib/generation-pages.js';
 import http from 'node:http';
@@ -109,7 +112,7 @@ function requestError(message, status = 400) {
 }
 
 // テスト時は一時フォルダを渡し、実際の企画データから分離できます。
-export function createApp({ dataDirectory = path.join(projectDirectory, 'data'), generationOptions = {}, offerImportOptions = {}, maintenanceOptions = {} } = {}) {
+export function createApp({ dataDirectory = path.join(projectDirectory, 'data'), generationOptions = {}, offerImportOptions = {}, maintenanceOptions = {}, extractionOptions = {} } = {}) {
   const importStore = offerImportOptions.store || createOfferImportStore(dataDirectory);
   const importViews = offerImportPages(escapeHtml);
   const offerStore = createOfferStore(dataDirectory);
@@ -119,6 +122,9 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
   const maintenanceViews = maintenancePages(escapeHtml);
   const budget = createBudgetCoordinator(dataDirectory, { now: generationOptions.now || (() => new Date()) });
   const extractionExecutions = createExecutionStore(dataDirectory);
+  const extraction = createExtractionService({ now: generationOptions.now, ...extractionOptions, dataDirectory,
+    provider: extractionOptions.provider || createOpenAIExtractionProvider(), store: extractionExecutions, importStore, offerStore, coordinator: budget });
+  const extractionViews = extractionPages(escapeHtml);
   const importExecutionReady = createExecutionGate(dataDirectory, extractionExecutions);
   const draftStore = createDraftStore(dataDirectory, { offerStore });
   const improvementStore = createImprovementStore(dataDirectory);
@@ -168,6 +174,36 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
         throw requestError('このアプリはlocalhostから開いてください。', 403);
       }
       const url = new URL(request.url, `http://${host}`);
+      if (request.method === 'GET' && url.pathname === '/offer-extraction.js') return send(200, await readFile(path.join(projectDirectory, 'public/offer-extraction.js')), 'text/javascript; charset=utf-8');
+      if (url.pathname === '/offer-extractions' || url.pathname.startsWith('/offer-extractions/')) {
+        try {
+          if (request.method === 'GET' && url.pathname === '/offer-extractions/new') {
+            if ([...url.searchParams.keys()].some(k => k !== 'offerId') || url.searchParams.getAll('offerId').length > 1) throw requestError('対象指定が不正です。', 400);
+            const offers = await offerStore.list();
+            const offer = url.searchParams.has('offerId') ? await offerStore.get(url.searchParams.get('offerId')) : offers[0] || null;
+            return send(200, page('資料から登録候補を作る', extractionViews.intake(offers, offer)).replace('</head>', '<script src="/offer-extraction.js" defer></script></head>'));
+          }
+          if (url.search) throw requestError('対象指定が不正です。', 400);
+          if (request.method === 'GET' && url.pathname === '/offer-extractions') return send(200, page('抽出実行記録', extractionViews.list((await extractionExecutions.read()).executions.map(e => e.revisions.at(-1)))));
+          if (request.method === 'POST' && url.pathname === '/offer-extractions/prepare') {
+            if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+            const value = parseExtractionForm(await readForm(request, host, 2 * 1024 * 1024));
+            const r = await extraction.prepare(value);
+            response.writeHead(303, { Location: `/offer-extractions/${r.id}`, 'Cache-Control': 'no-store' }); return response.end();
+          }
+          const match = url.pathname.match(/^\/offer-extractions\/([a-f0-9-]{36})(?:\/(approve))?$/);
+          if (!match) throw requestError('実行記録が見つかりません。', 404);
+          if (request.method === 'GET' && !match[2]) return send(200, page('抽出送信前確認', extractionViews.detail(await extraction.preview(match[1]))));
+          if (request.method !== 'POST' || match[2] !== 'approve') throw requestError('操作が見つかりません。', 404);
+          if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+          const token = parseExtractionApproval(await readForm(request, host, 6000));
+          await extraction.approveAndExecute(match[1], token, { confirm: true });
+          response.writeHead(303, { Location: `/offer-extractions/${match[1]}`, 'Cache-Control': 'no-store' }); return response.end();
+        } catch (error) {
+          const status = [400,403,404,409,413,415,503].includes(error.status) ? error.status : 503;
+          return send(status, page('抽出停止', extractionViews.failure()));
+        }
+      }
       if (url.pathname === '/maintenance' || url.pathname.startsWith('/maintenance/')) {
         try {
           if (url.search) return send(400, page('管理操作を停止', maintenanceViews.failure()));
@@ -521,7 +557,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   // dotenvは実行時だけ読み込み、server.jsをimportする自動テストでは読みません。
   await import('dotenv/config');
   const provider = createOpenAIProvider();
-  const server = createApp({ generationOptions: { provider, config: openaiConfig } });
+  const server = createApp({ generationOptions: { provider, config: openaiConfig },
+    extractionOptions: { provider: createOpenAIExtractionProvider({ apiKey: process.env.OPENAI_API_KEY }) } });
   // 他の端末からアクセスできないよう、このMacのループバックだけで待ち受けます。
   server.listen(3000, '127.0.0.1', () => {
     console.log('Yoshio AI Business を起動しました。http://127.0.0.1:3000 をブラウザで開いてください。');

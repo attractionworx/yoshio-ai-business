@@ -18,6 +18,8 @@ offer v1 / offer-import v1 / regulation extraction v1 / generation ledger v1 / c
 
 executionには対象offer ID/revision、資料metadata・本文hash、artifact参照、request hash、資料/target fingerprint、Provider/model識別metadata、config/prompt/schemaのversion/hash、入力見積・最大予約、承認、開始/終了、外部attempt、response hash、planned/saved import、固定分類のerror、unknown/recovery、予算状態を保持する。
 Provider/modelは将来の記録・会計分類用metadataを持てるが、実接続の許可ではない。Step 6-0Aの実行serviceはfakeだけを作成・承認・送信できる。モデル登録や実接続は別Step。
+Step 6-1で登録済みimmutable profile対応の抽出Providerと送信前UIを追加する。
+fake経路の識別情報だけでは実接続を許可しない。追加契約は`extraction-ui.md`を参照。
 監査は連続revisionのfull snapshotとして保持する。本文をexecution履歴へ重複保存しない。
 inputとvalidated extractionはそれぞれ一つのimmutable artifact。自動削除・圧縮・統合はない。
 
@@ -115,3 +117,4 @@ maxInputTokensはUTF-8 bytesとprompt overheadによる保守的事前検査、r
 通常ログへ資料・response・key・cookie・password・token・認証header・raw例外を出さない。
 fixtureは架空のみ。real API、.env、実案件、認証ページ、外向き通信は検証で使わない。
 実Provider、送信UI、unknown解除、同一資料の明示再解析、policy更新、実restoreは将来の別契約。
+Step 6-1では実Providerと送信UIだけを追加し、unknown解除・再解析例外・一般policy更新・実restoreは追加しない。

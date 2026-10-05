@@ -85,6 +85,8 @@ Step 6-1Aでは同じv2の7領域を維持し、新しいmanifestのcontractsに
 旧contractsへ承認ファイルが混入したbackupは拒否する。新contractでも承認pairがなければ追加承認なしと表示する。
 片方だけ・hash不一致はerror。write intent/temp等の未知ファイルは従来どおり完全backupを停止する。
 限定real承認の契約は`../ai/real-budget-approval.md`を参照。
+Step 6-1の実抽出も同じv2領域とschemaで保全する。登録済みprofile/config、固定inputと決定的payload見積、
+既存usage会計・import対応をintegrity/dry-runで照合する。未知profileは推測・移行せず停止する。
 
 ## 読み取り専用integrity check
 
