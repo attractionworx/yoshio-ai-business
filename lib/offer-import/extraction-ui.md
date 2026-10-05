@@ -77,3 +77,16 @@ prepareはProviderを呼ばないので、保存前拒否・保存結果不明�
 分類は例外の固定codeと一時的なpreparePersistenceのみを使い、raw例外・本文を画面へ渡さない。
 保存schemaやexecution遷移・budget判定・承認・unknown保持は変更しない。
 確認画面のreal_budget_disabledは共通budget未初期化と別表示。sending/unknownはsend_unknownとして再送禁止を明示する。
+
+## 抽出結果の検証診断
+
+新規の検証失敗は既存execution.error.code/phaseに固定理由だけを記録する。保存schemaの変更はない。
+validation_response（応答内部形式）、validation_input（固定入力）、validation_schema（schema）、
+validation_candidate（候補整合性）、validation_evidence_reference（資料/block参照）、
+validation_evidence_range（位置範囲）、validation_quote（quote完全一致）、
+validation_evidence_duplicate（根拠重複）、validation_secret（秘密情報/管理画面検査）。
+検証の順序・受理条件は同じ。複数不正がある場合は最初に検出した段階だけを記録する。
+型・数値下限などschemaで先に拒否される不正はschema分類になる。
+raw応答・例外・候補・quote断片・IDや位置などをreasonに含めず、UI説明は固定許可リストだけ。
+旧validation_failedは詳細記録なしとしてそのまま扱い、履歴を変更・再分類しない。
+費用は従来どおり検証前に計上し、failed_after_requestは終端。再送・復旧導線は追加しない。
