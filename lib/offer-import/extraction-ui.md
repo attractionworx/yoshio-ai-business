@@ -67,3 +67,13 @@ mixed origin等のreflection除外は変更しない。記事生成への規約�
 SDK stub・OS一時fixture・network guardのみ。実データ領域のreal枠有効化、実API、.env、認証ページは使わない。
 `test/openai-extraction.test.js`、`test/extraction-http.test.js`、`scripts/browser-offer-extraction.mjs`。
 maintenanceは既存v2に追加schemaなしで実抽出のprofile/input/estimate/usage/import対応を検証する。
+
+## 停止理由の表示
+
+prepareの拒否は固定理由コードで分類する（budget_uninitialized/input_invalid/input_limit/revision_conflict）。
+activation_requiredは未作成だけでなく安全に読み取れない場合も含むため、その両方を表示する。
+prepareはProviderを呼ばないので、保存前拒否・保存結果不明の双方で、この操作での外部送信・API料金なしを明示する。
+保存開始後の失敗はsave_uncertainとし、artifactが残っていても未保存扱いや自動修復・再試行をしない。
+分類は例外の固定codeと一時的なpreparePersistenceのみを使い、raw例外・本文を画面へ渡さない。
+保存schemaやexecution遷移・budget判定・承認・unknown保持は変更しない。
+確認画面のreal_budget_disabledは共通budget未初期化と別表示。sending/unknownはsend_unknownとして再送禁止を明示する。

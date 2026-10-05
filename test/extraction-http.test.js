@@ -5,7 +5,8 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { createApp } from '../server.js';
 import { openaiExtractionFixture, fictionalRows } from './fixtures/openai-extraction.js';
-import { parseExtractionForm, makeDocuments } from '../lib/offer-import/extraction-pages.js';
+import { parseExtractionForm, makeDocuments, extractionFailureContext, extractionPages } from '../lib/offer-import/extraction-pages.js';
+import { createArtifactStore } from '../lib/offer-import/extraction-artifacts.js';
 import { fixtureBudgetPolicy } from './fixtures/ai-budget.js';
 import { capture, snapshotHash } from '../lib/maintenance/snapshot.js';
 
@@ -40,7 +41,7 @@ test('6-1 HTTP: offer/draft intake, immutable prepare, complete escaped confirma
 });
 test('6-1 HTTP: null real cap renders stopped confirmation without approval form and never enables real',async t=>{
   const c=await fixture(t,{policy:{...fixtureBudgetPolicy,realStopMilliYen:null}});const location=await c.httpPrepare();const html=await(await fetch(c.base+location)).text();
-  assert.match(html,/無効（null）/);assert.match(html,/送信停止/);assert.ok(!html.includes('name="token"'));assert.equal(c.sdkCalls.length,0);assert.equal((await c.coordinator.activation()).policy.realStopMilliYen,null);
+  assert.match(html,/無効（null）/);assert.match(html,/real_budget_disabled/);assert.ok(!html.includes('budget_uninitialized'));assert.match(html,/送信停止/);assert.ok(!html.includes('name="token"'));assert.equal(c.sdkCalls.length,0);assert.equal((await c.coordinator.activation()).policy.realStopMilliYen,null);
   await assert.rejects(fs.lstat(path.join(c.root,'ai-budget/real-approval.json')),{code:'ENOENT'});
 });
 test('6-1 HTTP: saved but unfinished import is never review-linked or accepted',async t=>{
@@ -51,7 +52,7 @@ test('6-1 HTTP: saved but unfinished import is never review-linked or accepted',
 });
 test('6-1 HTTP: connection unknown status hides send/review forms and retains reservation',async t=>{
   const c=await fixture(t,{respond:()=>{throw new Error('fictional-private');}});const location=await c.httpPrepare();const html=await(await fetch(c.base+location)).text();const token=html.match(/name="token" value="([^"]+)"/)[1];
-  await c.post(location+'/approve',new URLSearchParams({token,confirm:'yes'}));const stopped=await(await fetch(c.base+location)).text();assert.match(stopped,/unknown/);assert.ok(!stopped.includes('name="token"'));assert.ok(!stopped.includes('href="/offer-imports/'));assert.ok(!stopped.includes('fictional-private'));
+  await c.post(location+'/approve',new URLSearchParams({token,confirm:'yes'}));const stopped=await(await fetch(c.base+location)).text();assert.match(stopped,/unknown/);assert.match(stopped,/送信結果不明（send_unknown）/);assert.match(stopped,/二重送信防止のため再送しない/);assert.ok(!stopped.includes('API料金は発生していません'));assert.ok(!stopped.includes('name="token"'));assert.ok(!stopped.includes('href="/offer-imports/'));assert.ok(!stopped.includes('fictional-private'));
   assert.equal((await c.store.read()).executions[0].revisions.at(-1).budget.reservedMilliYen,1824);
 });
 for(const defect of ['origin','missing_origin','cross_site','unknown','duplicate','revision','secret','html','oversize','content_type','host'])test(`6-1 HTTP: prepare ${defect} rejected with no artifact/send`,async t=>{
@@ -77,4 +78,41 @@ test('6-1: input parser rejects unknown metadata and ID injection, ignores only 
   const c={offer:{id:'10000000-0000-4000-8000-000000000001',revision:1}};const form=extractionForm(c);const value=parseExtractionForm(form);assert.deepEqual(value.documents,makeDocuments(fictionalRows()));
   form.set('documents.2.label','');form.set('documents.2.text','');form.set('documents.2.kind','user_provided');form.set('documents.2.versionLabel','');assert.equal(parseExtractionForm(form).documents.length,2);
   form.set('documents.0.id','injected');assert.throws(()=>parseExtractionForm(form));
+});
+
+for (const defect of ['budget_uninitialized','input_invalid','input_limit','revision_conflict','save_uncertain']) test(`6-1 UX: prepare reason ${defect}, no API, persistence distinguished`, async t => {
+  const options = defect === 'save_uncertain' ? { serviceOptions: { artifacts: { async create() { throw Object.assign(new Error('fictional-private-body'), { code: 'persistence_uncertain', status: 503 }); } } } } : {};
+  const c = await fixture(t, options); const form = extractionForm(c);
+  if (defect === 'budget_uninitialized') await fs.rename(path.join(c.root,'ai-budget/activation.json'),path.join(c.root,'fixture-activation-away.json'));
+  if (defect === 'input_invalid') form.set('documents.0.text','Cookie: fictional-secret');
+  if (defect === 'input_limit') form.set('documents.0.text','架空'.repeat(15000));
+  if (defect === 'revision_conflict') form.set('offerRevision','2');
+  const response = await c.post('/offer-extractions/prepare',form); const html = await response.text();
+  assert.ok(response.status >= 400); assert.match(html,new RegExp('停止理由（'+defect+'）'));
+  assert.match(html,/外部送信していません/); assert.match(html,/API料金は発生していません/);
+  assert.equal(c.sdkCalls.length,0); assert.equal((await c.store.read()).executions.length,0);
+  assert.ok(!html.includes('fictional-secret')); assert.ok(!html.includes('fictional-private-body'));
+  assert.ok(!html.includes('送信済みの可能性')); assert.equal(html.includes('保存前に停止'),defect !== 'save_uncertain');
+  if (defect === 'save_uncertain') assert.match(html,/保存結果不明/);
+});
+test('6-1 UX: fixed reason allowlist never leaks raw error or claims no charge for approval uncertainty', () => {
+  const views = extractionPages(v=>v);
+  const raw = { code:'<script>fictional-secret</script>', message:'fictional-private-body', status:503 };
+  const html = views.failure(extractionFailureContext(raw,'approve'));
+  assert.match(html,/operation_uncertain/); assert.match(html,/二重送信防止のため再送しない/);
+  assert.ok(!html.includes('API料金は発生していません')); assert.ok(!html.includes('fictional-'));
+  assert.match(views.failure({code:raw.code,state:'before_save'}),/operation_uncertain/);
+});
+
+test('6-1 UX: artifact saved before failed prepare remains uncertain, never retried or sent', async t => {
+  let backing; let calls = 0;
+  const c = await fixture(t, { serviceOptions: { artifacts: { async create(...args) {
+    calls++; await backing.create(...args); throw Object.assign(new Error('fictional-private-disk'), {code:'persistence_uncertain',status:503});
+  } } } });
+  backing = createArtifactStore(c.root, {now:c.now});
+  const response = await c.post('/offer-extractions/prepare',extractionForm(c)); const html = await response.text();
+  assert.match(html,/save_uncertain/); assert.match(html,/保存結果不明/); assert.match(html,/外部送信していません/);
+  assert.ok(!html.includes('保存前に停止')); assert.ok(!html.includes('fictional-private-disk'));
+  assert.equal(calls,1); assert.equal(c.sdkCalls.length,0); assert.equal((await c.store.read()).executions.length,0);
+  const files = await fs.readdir(path.join(c.root,'extraction-artifacts')); assert.equal(files.filter(n=>n.endsWith('.json')).length,1);
 });

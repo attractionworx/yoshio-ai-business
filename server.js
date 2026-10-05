@@ -6,7 +6,7 @@ import { createGenerationService } from './lib/ai/generation-service.js';
 import { createOpenAIProvider } from './lib/ai/openai-provider.js';
 import { createOpenAIExtractionProvider } from './lib/ai/openai-extraction-provider.js';
 import { createExtractionService } from './lib/offer-import/extraction-service.js';
-import { extractionPages, parseExtractionForm, parseExtractionApproval } from './lib/offer-import/extraction-pages.js';
+import { extractionPages, parseExtractionForm, parseExtractionApproval, extractionFailureContext } from './lib/offer-import/extraction-pages.js';
 import { openaiConfig } from './lib/ai/config.js';
 import { generationPages } from './lib/generation-pages.js';
 import http from 'node:http';
@@ -201,7 +201,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
           response.writeHead(303, { Location: `/offer-extractions/${match[1]}`, 'Cache-Control': 'no-store' }); return response.end();
         } catch (error) {
           const status = [400,403,404,409,413,415,503].includes(error.status) ? error.status : 503;
-          return send(status, page('抽出停止', extractionViews.failure()));
+          return send(status, page('抽出停止', extractionViews.failure(extractionFailureContext(error, request.method === 'POST' && url.pathname === '/offer-extractions/prepare' ? 'prepare' : 'other'))));
         }
       }
       if (url.pathname === '/maintenance' || url.pathname.startsWith('/maintenance/')) {

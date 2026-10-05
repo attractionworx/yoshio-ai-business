@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 // インストール済みChromeで実際にフォームを操作する確認用スクリプト。
 // Chromeの専用プロフィールと架空データはOSの一時フォルダに保存します。
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rename } from 'node:fs/promises';
 import { once } from 'node:events';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -153,6 +153,23 @@ try {
   assert.equal(await evaluate('document.querySelectorAll("textarea").length'), 2);
   await call('Emulation.setScriptExecutionDisabled', { value: false });
   await navigate('/offer-extractions/new?offerId=' + fixture.offer.id, '資料から登録候補を作る');
+  // Only isolated fictional fixtures: no runtime budget/data mutation.
+  await rename(path.join(dataDirectory,'ai-budget/activation.json'),path.join(directory,'fixture-activation-away.json'));
+  await fill(fictionalRows());
+  await evaluate('document.querySelector("[data-extraction-form] button:not([type])").click()');
+  await until(() => evaluate('document.body.innerText.includes("budget_uninitialized")'));
+  for (const text of ['共通budget未初期化','外部送信していません','API料金は発生していません','保存前に停止しました']) {
+    assert.equal(await evaluate(`document.body.innerText.includes(${JSON.stringify(text)})`),true,text);
+  }
+  assert.equal(fixture.sdkCalls.length,1); await screenshots('prepare-budget-uninitialized');
+  await rename(path.join(directory,'fixture-activation-away.json'),path.join(dataDirectory,'ai-budget/activation.json'));
+  await navigate('/offer-extractions/new?offerId=' + fixture.offer.id, '資料から登録候補を作る');
+  const oversized = fictionalRows(); oversized[0].text = '架空'.repeat(15000);
+  await fill(oversized); await evaluate('document.querySelector("[data-extraction-form] button:not([type])").click()');
+  await until(() => evaluate('document.body.innerText.includes("見積上限超過")'));
+  assert.equal(await evaluate('document.body.innerText.includes("API料金は発生していません")'),true);
+  await screenshots('prepare-input-limit');
+  await navigate('/offer-extractions/new?offerId=' + fixture.offer.id, '資料から登録候補を作る');
   const rows = fictionalRows(); rows[0].label += '別版';
   await fill(rows); mode = 'unknown';
   await evaluate('document.querySelector("[data-extraction-form] button:not([type])").click()');
@@ -161,6 +178,7 @@ try {
   await until(() => evaluate('document.body.innerText.includes("state unknown")'));
   assert.equal(fixture.sdkCalls.length, 2);
   assert.equal(await evaluate('Boolean(document.querySelector("input[name=confirm]")) || Boolean(document.querySelector("a[href^=\\\"/offer-imports/\\\"]"))'), false);
+  assert.equal(await evaluate('document.body.innerText.includes("送信結果不明（send_unknown）") && document.body.innerText.includes("二重送信防止のため再送しない")'),true);
   await screenshots('unknown');
   await assert.rejects(fixture.generation.execute(fixture.plan, fixture.generation.confirmation(fixture.plan)), { code: 'ai_in_progress' });
   assert.deepEqual(externalRequests, []); assert.deepEqual(interceptionErrors, []); assert.equal(blockedConnections.length, 0);
