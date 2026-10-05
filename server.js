@@ -226,8 +226,8 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
           if (request.method === 'POST' && url.pathname === '/maintenance/ai-budget/activate') {
             if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
             const policy = parseBudgetActivation(await readForm(request, host, 2000));
-            const activation = await budget.activate(policy, { confirm: true, expectedRevision: 0 });
-            return send(200, page('共通AI予算', budgetPage(escapeHtml, activation)));
+            await budget.activate(policy, { confirm: true, expectedRevision: 0 });
+            response.writeHead(303, { Location: '/maintenance/ai-budget', 'Cache-Control': 'no-store' }); return response.end();
           }
           if (request.method === 'GET' && url.pathname === '/maintenance') return send(200, page('データ保全管理', maintenanceViews.home(await maintenance.list())));
           if (request.method === 'GET' && url.pathname === '/maintenance/integrity') return send(200, page('整合性確認', maintenanceViews.integrity(await maintenance.integrity())));

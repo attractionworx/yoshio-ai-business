@@ -14,7 +14,7 @@ import { createExtractionService } from '../lib/offer-import/extraction-service.
 import { createMaintenanceService } from '../lib/maintenance/backup.js';
 
 let mode = 'success';
-const fixture = await openaiExtractionFixture(undefined, { respond: (_request, _options, input) => {
+const fixture = await openaiExtractionFixture(undefined, { activate: false, respond: (_request, _options, input) => {
   if (mode === 'unknown') throw new Error('fictional interrupted stub');
   return { status: 'completed', service_tier: 'default', output_text: JSON.stringify(stubExtraction(input)), usage: { input_tokens: 1000, output_tokens: 2000 } };
 } });
@@ -36,6 +36,7 @@ let nextId = 0;
 const pending = new Map();
 const requests = [];
 const responses = [];
+const navigationRequests = [];
 const externalRequests = [];
 const interceptionErrors = [];
 function call(method, params = {}) {
@@ -92,6 +93,7 @@ try {
     if (message.method === 'Network.requestWillBeSentExtraInfo') requests.push(message.params);
     if (message.method === 'Network.requestWillBeSent' && /^https?:/.test(message.params.request.url) && new URL(message.params.request.url).origin !== base) externalRequests.push(message.params.request.url);
     if (message.method === 'Network.responseReceived') responses.push(message.params.response);
+    if (message.method === 'Network.requestWillBeSent') navigationRequests.push(message.params);
   });
   await call('Network.enable');
   await call('Page.enable');
@@ -113,6 +115,12 @@ try {
   async function fill(rows) {
     await evaluate(`(${JSON.stringify(rows)}).forEach((row,i)=>Object.entries(row).forEach(([key,value])=>{document.querySelector('[name="documents.'+i+'.'+key+'"]').value=value;}))`);
   }
+  await navigate('/maintenance/ai-budget', '共通予算：未有効化');
+  await evaluate('document.querySelector("input[name=simulationYen]").value="100"; document.querySelector("input[name=realYen]").value="100"; document.querySelector("input[name=confirm]").click(); document.querySelector("form button").click()');
+  await until(() => evaluate('location.pathname === "/maintenance/ai-budget" && document.body.innerText.includes("effective real停止額：100円")'));
+  assert.ok(navigationRequests.some(p=>p.redirectResponse?.status===303 && p.redirectResponse.url===base+'/maintenance/ai-budget/activate' && p.request.method==='GET' && p.request.url===base+'/maintenance/ai-budget'));
+  assert.equal(await evaluate('document.body.innerText.includes("共通budgetを安全に確認できません")'),false);
+  assert.equal(fixture.sdkCalls.length,0); await screenshots('initial-activation-effective-budget');
   await navigate('/offers/' + fixture.offer.id, '架空の折り紙講座');
   assert.equal(await evaluate('document.body.innerText.includes("資料から登録候補を作る")'), true);
   await navigate('/offer-extractions/new?offerId=' + fixture.offer.id, '資料から登録候補を作る');

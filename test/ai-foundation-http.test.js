@@ -17,7 +17,7 @@ async function httpFixture(t, options = {}) {
   const c = await executionFixture(t, options); const app = createApp({ dataDirectory: c.root, generationOptions: { now: c.now }, maintenanceOptions: { now: c.now } });
   await new Promise((resolve, reject) => { app.once('error', reject); app.listen(0, '127.0.0.1', resolve); });
   t.after(() => new Promise(r => app.close(r))); const base = `http://127.0.0.1:${app.address().port}`;
-  const post = (url, values, headers = {}) => fetch(base + url, { method: 'POST', body: new URLSearchParams(values), headers: { Origin: base, ...headers } });
+  const post = (url, values, headers = {}) => fetch(base + url, { method: 'POST', body: new URLSearchParams(values), headers: { Origin: base, ...headers }, redirect: 'manual' });
   return { ...c, base, post };
 }
 const values = { confirm: 'yes', revision: '0', realYen: '', simulationYen: '900' };
@@ -26,7 +26,9 @@ test('6-0A HTTP: management GET never activates; explicit POST fixes version/has
   const response = await fetch(c.base + '/maintenance/ai-budget'); assert.equal(response.status, 200); const text = await response.text(); assert.match(text, /未有効化/);
   assert.match(response.headers.get('content-security-policy'), /form-action 'self'/);
   await assert.rejects(fs.lstat(path.join(c.root, 'ai-budget')), { code: 'ENOENT' });
-  const activated = await c.post('/maintenance/ai-budget/activate', values); assert.equal(activated.status, 200); assert.match(await activated.text(), /明示有効化済み/);
+  const activated = await c.post('/maintenance/ai-budget/activate', values); assert.equal(activated.status, 303); assert.equal(activated.headers.get('location'), '/maintenance/ai-budget');
+  assert.equal(activated.headers.get('cache-control'), 'no-store');
+  const get = await fetch(c.base + activated.headers.get('location')); assert.equal(get.status, 200); assert.match(await get.text(), /明示有効化済み/);
   const a = await c.coordinator.activation(); assert.equal(a.policy.realStopMilliYen, null); assert.equal(a.schemaVersion, 1); assert.equal(a.initialBudget.simulation.bookedMilliYen, 0);
   assert.equal((await c.post('/maintenance/ai-budget/activate', values)).status, 409);
 });
@@ -67,4 +69,19 @@ test('6-0A: maintenance fixes global lock order including artifacts without chan
   const backup = await createMaintenanceService(c.root, { fileSystem, now: c.now }).create();
   assert.equal(backup.manifest.schemaVersion, 2);
   assert.deepEqual(locks, ['ai-budget', 'generations', 'extraction-executions', 'extraction-artifacts', 'offer-import-commits', 'offer-imports', 'offers']);
+});
+
+test('activation HTTP: initial 100 yen real cap redirects to GET with effective budget, no additional approval or API', async t => {
+  const c = await httpFixture(t, { activate: false });
+  const form = new URLSearchParams({ confirm:'yes',revision:'0',simulationYen:'100',realYen:'100' });
+  const response = await c.post('/maintenance/ai-budget/activate', form);
+  assert.equal(response.status,303); assert.equal(response.headers.get('location'),'/maintenance/ai-budget');
+  const saved = await fs.readFile(path.join(c.root,'ai-budget/activation.json'));
+  const page = await fetch(c.base + response.headers.get('location')); const html = await page.text();
+  assert.equal(page.status,200); assert.match(html,/effective real停止額：100円/);
+  assert.ok(!html.includes('共通budgetを安全に確認できません')); assert.ok(!html.includes('action="/maintenance/ai-budget/real-preview"'));
+  assert.equal(JSON.parse(saved).policy.realStopMilliYen,100000);
+  await fetch(c.base + '/maintenance/ai-budget'); assert.deepEqual(await fs.readFile(path.join(c.root,'ai-budget/activation.json')),saved);
+  await assert.rejects(fs.lstat(path.join(c.root,'ai-budget/real-approval.json')),{code:'ENOENT'});
+  assert.equal(c.calls.length,0);
 });
