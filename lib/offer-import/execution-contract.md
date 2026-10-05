@@ -81,6 +81,10 @@ activationがない・破損・部分保存・task store欠落なら、新しい
 初期generation IDごとの会計hashと集計を保持し、欠落・費用書換えを検査する。
 activation途中失敗は再有効化で上書きしない。policy変更・再有効化・migration・残高リセットの経路はない。
 
+Step 6-1Aでは元activationを変更しない限定real承認だけを別記録で追加する。
+既存real枠null→正値の一度だけの承認契約は`../ai/real-budget-approval.md`を参照。
+一般policy更新・再有効化・migration・残高リセットは引き続きない。
+
 ```text
 当月generation＋extraction計上済み金額
 ＋全月generation＋extraction未解放予約

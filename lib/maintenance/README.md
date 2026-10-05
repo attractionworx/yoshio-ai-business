@@ -79,6 +79,13 @@ activation policy hashと初期generation会計を照合する。未解決execut
 v2内に必要なtask anchorがない場合も停止し、欠落を空台帳と解釈しない。
 AI領域を含むbackup/dry-runでも実restore・自動修復・履歴削除は行わない。
 
+Step 6-1Aでは同じv2の7領域を維持し、新しいmanifestのcontractsに`realBudgetApproval:1`を追加する。
+`ai-budget/real-approval.json`と`real-approval-anchor.json`を保全し、元activationとのhash束縛とpairを検証する。
+旧contractsのv2もそのまま読み取り、限定real承認の保全対象外とdry-runで明示する。
+旧contractsへ承認ファイルが混入したbackupは拒否する。新contractでも承認pairがなければ追加承認なしと表示する。
+片方だけ・hash不一致はerror。write intent/temp等の未知ファイルは従来どおり完全backupを停止する。
+限定real承認の契約は`../ai/real-budget-approval.md`を参照。
+
 ## 読み取り専用integrity check
 
 ソースにロック・ディレクトリ・記録を作成しない。

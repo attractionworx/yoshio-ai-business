@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ai-real-budget-approval-anchor.schema.json",
+  "title": "ai-real-budget-approval-anchor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "revision",
+    "activationHash",
+    "recordHash"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "revision": {
+      "const": 1
+    },
+    "activationHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "recordHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "description": "Structural contract only. The pure validator verifies record hashes, original activation binding and the one-time null-to-positive policy transition. Incomplete pairs never authorize execution."
+}

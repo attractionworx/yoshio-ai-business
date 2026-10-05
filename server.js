@@ -1,6 +1,6 @@
 import { createExecutionGate } from './lib/offer-import/execution-gate.js';
 import { createBudgetCoordinator } from './lib/ai/budget-coordinator.js';
-import { budgetPage, parseBudgetActivation } from './lib/ai/budget-pages.js';
+import { budgetPage, parseBudgetActivation, parseRealApproval, realApprovalPreview } from './lib/ai/budget-pages.js';
 import { createExecutionStore } from './lib/offer-import/execution-store.js';
 import { createGenerationService } from './lib/ai/generation-service.js';
 import { createOpenAIProvider } from './lib/ai/openai-provider.js';
@@ -173,9 +173,19 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
           if (url.search) return send(400, page('管理操作を停止', maintenanceViews.failure()));
           if (request.method === 'GET' && url.pathname === '/maintenance/ai-budget') {
             let activation = null; let executions = [];
+            let state = null;
             try { activation = await budget.activation(); } catch { /* fixed stop message, no raw error */ }
+            if (activation) try { state = await budget.state(); } catch { /* fail closed, no enable form */ }
             try { executions = (await extractionExecutions.read()).executions.map(e => e.revisions.at(-1)); } catch { /* integrity explains failure */ }
-            return send(200, page('共通AI予算', budgetPage(escapeHtml, activation, executions)));
+            return send(200, page('共通AI予算', budgetPage(escapeHtml, activation, executions, state)));
+          }
+          if (request.method === 'POST' && ['/maintenance/ai-budget/real-preview', '/maintenance/ai-budget/enable-real'].includes(url.pathname)) {
+            if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+            const final = url.pathname.endsWith('/enable-real');
+            const parsed = parseRealApproval(await readForm(request, host, 4000), final);
+            if (!final) return send(200, page('共通real枠の最終確認', realApprovalPreview(escapeHtml, await budget.previewRealApproval(parsed))));
+            await budget.enableReal(parsed, { confirm: true });
+            response.writeHead(303, { Location: '/maintenance/ai-budget', 'Cache-Control': 'no-store' }); return response.end();
           }
           if (request.method === 'POST' && url.pathname === '/maintenance/ai-budget/activate') {
             if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);

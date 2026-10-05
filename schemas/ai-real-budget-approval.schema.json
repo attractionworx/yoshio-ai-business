@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ai-real-budget-approval.schema.json",
+  "title": "ai-real-budget-approval v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "revision",
+    "expectedRevision",
+    "activationHash",
+    "activationRevision",
+    "originalPolicyVersion",
+    "originalPolicyHash",
+    "realStopMilliYen",
+    "approvedAt",
+    "approval",
+    "effectivePolicy",
+    "effectivePolicyHash",
+    "snapshotHash",
+    "recordHash"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "revision": {
+      "const": 1
+    },
+    "expectedRevision": {
+      "const": 0
+    },
+    "activationHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "activationRevision": {
+      "const": 1
+    },
+    "originalPolicyVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60
+    },
+    "originalPolicyHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "realStopMilliYen": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "approvedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "approval": {
+      "const": "human_explicit"
+    },
+    "effectivePolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "version",
+        "realStopMilliYen",
+        "simulationStopMilliYen"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "version": {
+          "const": "limited-real-v1"
+        },
+        "realStopMilliYen": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "simulationStopMilliYen": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 1
+            }
+          ]
+        }
+      }
+    },
+    "effectivePolicyHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "snapshotHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "recordHash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  },
+  "description": "Structural contract only. The pure validator verifies record hashes, original activation binding and the one-time null-to-positive policy transition. Incomplete pairs never authorize execution."
+}
