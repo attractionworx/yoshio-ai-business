@@ -17,10 +17,10 @@ async function diagnosticFixture(t) {
 
 const mutations = {
   validation_schema: x => { x.schemaVersion = 2; },
-  validation_candidate: x => { x.candidates[0].conversionKey = 'fictional_wrong_group'; },
+  validation_candidate_conversion_key: x => { x.candidates[0].conversionKey = 'fictional_wrong_group'; },
   validation_evidence_reference: x => { x.candidates[0].evidence[0].documentId = 'missing-document'; },
   validation_evidence_range: x => { x.candidates[0].evidence[0].end += 1; },
-  validation_quote: x => { x.candidates[0].evidence[0].quote = 'fictional-mismatched-quote'; },
+  validation_quote_length_mismatch: x => { x.candidates[0].evidence[0].quote = 'fictional-mismatched-quote'; },
   validation_evidence_duplicate: x => { x.candidates[0].evidence.push(structuredClone(x.candidates[0].evidence[0])); },
   validation_secret: x => { x.candidates[0].text = 'Cookie: fictional-private-value'; },
 };
@@ -48,7 +48,7 @@ for (const [label,change,code] of [
   ['missing block',x=>{x.candidates[0].evidence[0].blockId='missing-block';},'validation_evidence_reference'],
   ['reversed range',x=>{x.candidates[0].evidence[0].start=x.candidates[0].evidence[0].end;},'validation_evidence_range'],
   ['negative start is schema failure',x=>{x.candidates[0].evidence[0].start=-1;},'validation_schema'],
-  ['candidate target/category',x=>{x.candidates[1].purpose='fact';},'validation_candidate'],
+  ['candidate target/category',x=>{x.candidates[1].purpose='fact';},'validation_candidate_prohibited'],
   ['management page',x=>{x.candidates[0].text='<html><body>fictional-private</body></html>';},'validation_secret'],
 ]) test(`validation diagnostics: ${label} preserves validation order`, async t => {
   const c=await diagnosticFixture(t); const x=stubExtraction(c.value); change(x);
@@ -64,10 +64,10 @@ test('validation diagnostics: malformed fake response envelope uses fixed respon
   assert.ok(!(await fs.readFile(path.join(c.root,'extraction-executions/ledger.json'),'utf8')).includes('fictional-raw-private'));
 });
 test('validation diagnostics: SDK stub quote failure UI, maintenance and unchanged legacy failure history',async t=>{
-  const c=await openaiExtractionFixture(t,{respond:(_request,_options,input)=>{const x=stubExtraction(input);mutations.validation_quote(x);return{status:'completed',output_text:JSON.stringify(x),usage:{input_tokens:1000,output_tokens:2000}};}});
-  const r=await c.run(); assert.equal(r.error.code,'validation_quote'); assert.equal(r.budget.bookedMilliYen,176);
+  const c=await openaiExtractionFixture(t,{respond:(_request,_options,input)=>{const x=stubExtraction(input);mutations.validation_quote_length_mismatch(x);return{status:'completed',output_text:JSON.stringify(x),usage:{input_tokens:1000,output_tokens:2000}};}});
+  const r=await c.run(); assert.equal(r.error.code,'validation_quote_not_found'); assert.equal(r.budget.bookedMilliYen,176);
   const v=await c.service.preview(r.id); const views=extractionPages(x=>String(x)); const html=views.detail(v);
-  assert.match(html,/理由（validation_quote）/); assert.match(html,/原文と完全一致しません/);
+  assert.match(html,/理由（validation_quote_not_found）/); assert.match(html,/完全一致がありません/);
   assert.ok(!html.includes('fictional-mismatched-quote'));assert.ok(!html.includes('href="/offer-imports/'));assert.ok(!html.includes('name="token"'));
   for (const [code, explanation] of Object.entries(validationReasons)) {
     const classified = structuredClone(v); classified.record.error.code = code;

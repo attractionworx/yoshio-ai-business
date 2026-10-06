@@ -36,10 +36,10 @@ for (const field of ['model','pricing','exchange','builderHash','instructions','
   assert.notEqual(a.version,b.version); assert.notEqual(digest(a),digest(b));
   assert.notEqual(requestDigest('a'.repeat(64),a,'openai',extractionProfile.model),requestDigest('a'.repeat(64),b,'openai',altered.model));
 });
-test('6-1: wire schema preserves enum/required/bounds/evidence and existing v1 semantics', async () => {
-  const source = JSON.parse(await fs.readFile(new URL('../schemas/regulation-extraction.schema.json',import.meta.url)));
+test('6-1: wire wire v2 preserves candidate enum/required/bounds and omits model offsets', async () => {
+  const source = JSON.parse(await fs.readFile(new URL('../schemas/regulation-extraction-wire-v2.schema.json',import.meta.url)));
   const wire = extractionProfile.outputSchema;
-  const strip = v => Array.isArray(v) ? v.map(strip) : v && typeof v==='object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !['$schema','title','description','type'].includes(k)).map(([k,x])=>[k,strip(x)])) : v;
+  const strip = v => Array.isArray(v) ? v.map(strip) : v && typeof v==='object' ? Object.fromEntries(Object.entries(v).filter(([k]) => !['$schema','$id','title','description','type'].includes(k)).map(([k,x])=>[k,strip(x)])) : v;
   assert.deepEqual(strip(wire),strip(source)); assert.equal(wire.properties.schemaVersion.type,'integer'); assert.equal(wire.$defs.payload.properties.target.type,'string');
 });
 test('6-1: estimate covers instructions, metadata and schema; max reservation exactly 1.824 yen', async t => {
@@ -96,7 +96,7 @@ test('6-1: SDK success after durable sending books real usage, creates only pend
 for (const defect of ['json','schema','source_checked','adopt','quote','secret','incomplete','refused']) test(`6-1: ${defect} response books known usage and creates no partial import`, async t => {
   const c=await openaiExtractionFixture(t,{respond:(_request,_options,input)=>{
     const extraction=stubExtraction(input); let output=JSON.stringify(extraction); let status='completed';
-    if(defect==='json') output='{ invalid fictional JSON'; if(defect==='schema') output='{"schemaVersion":2,"candidates":[]}';
+    if(defect==='json') output='{ invalid fictional JSON'; if(defect==='schema') output='{"schemaVersion":3,"candidates":[]}';
     if(defect==='source_checked') {extraction.candidates[0].verification='source_checked';output=JSON.stringify(extraction);}
     if(defect==='adopt') {extraction.candidates[0].decision='accepted';output=JSON.stringify(extraction);}
     if(defect==='quote') {extraction.candidates[0].evidence[0].quote='does not match';output=JSON.stringify(extraction);}
@@ -144,11 +144,11 @@ test('6-1: expired confirmation and changed offer revision prevent SDK calls',as
   const approved=await c.service.approve(r.id,1,{confirm:true,requestHash:r.requestHash});const input=structuredClone(c.offer);for(const key of ['id','schemaVersion','revision','createdAt','updatedAt'])delete input[key];input.name+='更新';
   await c.offers.update(c.offer.id,1,input);const result=await c.service.execute(r.id,approved.revision);assert.equal(result.state,'failed_before_request');assert.equal(c.sdkCalls.length,0);
 });
-test('6-1: config changed after approval stops proven-unsent and releases reservation', async t => {
+test('6-1: tampered v4 configuration stops unreadable without altering reservation', async t => {
   const c=await openaiExtractionFixture(t);const r=await c.prepare();const approved=await c.service.approve(r.id,1,{confirm:true,requestHash:r.requestHash});
   const file=path.join(c.root,'extraction-executions/ledger.json');const ledger=JSON.parse(await fs.readFile(file));
   for(const row of ledger.executions[0].revisions){row.configuration.version+='-changed';const {hash,...cfg}=row.configuration;row.configuration.hash=digest(cfg);row.requestHash=requestDigest(row.inputArtifact.hash,row.configuration,row.provider,row.model);if(row.approval)row.approval.hash=row.requestHash;}
-  await fs.writeFile(file,JSON.stringify(ledger));const stopped=await c.service.execute(r.id,approved.revision);assert.equal(stopped.state,'failed_before_request');assert.equal(stopped.budget.reservedMilliYen,0);assert.equal(c.sdkCalls.length,0);
+  await fs.writeFile(file,JSON.stringify(ledger));await assert.rejects(c.service.execute(r.id,approved.revision),{code:'execution_unreadable'});assert.equal(JSON.parse(await fs.readFile(file)).executions[0].revisions.at(-1).budget.reservedMilliYen,approved.budget.reservedMilliYen);assert.equal(c.sdkCalls.length,0);
 });
 test('6-1: immutable artifact tampering after approval never invokes SDK', async t => {
   const c=await openaiExtractionFixture(t);const r=await c.prepare();const approved=await c.service.approve(r.id,1,{confirm:true,requestHash:r.requestHash});
@@ -176,6 +176,6 @@ for(const text of ['Cookie: fictional-secret','password=fictional-secret','<html
 });
 test('6-1: real execution/input/profile/usage consistent in maintenance v2 backup and dry-run',async t=>{
   const c=await openaiExtractionFixture(t);await c.run();const m=createMaintenanceService(c.root,{now:c.now});assert.equal((await m.integrity()).status,'normal');
-  const backup=await m.create();assert.equal(backup.manifest.schemaVersion,2);const dry=await m.dryRun(backup.manifest.id);assert.equal(dry.status,'normal');assert.equal(dry.report.metrics.extractionExecutions,1);
+  const backup=await m.create();assert.equal(backup.manifest.schemaVersion,4);const dry=await m.dryRun(backup.manifest.id);assert.equal(dry.status,'normal');assert.equal(dry.report.metrics.extractionExecutions,1);
 });
 test('6-1: all tests make zero external connection attempts',()=>assert.equal(blockedConnections.length,0));

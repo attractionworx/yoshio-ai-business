@@ -1,0 +1,149 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "candidates"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "enum": [
+        2
+      ]
+    },
+    "candidates": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/payload"
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RegulationExtractionCandidates",
+  "description": "AI output only. No approval, verification, offer state, official IDs or timestamps.",
+  "$defs": {
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "enum": [
+            "name",
+            "conversion_name",
+            "disclosure_text",
+            "facts",
+            "targetAudience",
+            "sellingPoints",
+            "prohibitedExpressions",
+            "eligibility",
+            "approvalConditions",
+            "rejectionConditions",
+            "ctaLabel",
+            "reward_evidence",
+            "unmapped"
+          ]
+        },
+        "conversionKey": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+            }
+          ]
+        },
+        "category": {
+          "enum": [
+            "price",
+            "track_record",
+            "effect",
+            "feature",
+            "audience",
+            "selling_point",
+            "eligibility",
+            "approval",
+            "rejection",
+            "prohibition",
+            "reward",
+            "other"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "usage": {
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "enum": [
+            "fact",
+            "restriction",
+            "marketing_goal",
+            "conversion_condition",
+            "unmapped"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "documentId",
+        "blockId",
+        "quote"
+      ],
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "blockId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "description": "連続原文を完全転記。trim、正規化、訂正、要約、引用符追加は禁止。反復する短い引用を避け、一意な原文を選ぶ。start/endは出力しない。"
+        }
+      },
+      "description": "指定documentの指定block内で一意に完全一致する連続原文quote。位置はローカルで決定する。"
+    }
+  },
+  "$id": "regulation-extraction-wire-v2.schema.json"
+}

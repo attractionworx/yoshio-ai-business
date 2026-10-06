@@ -20,7 +20,17 @@ export async function openaiExtractionFixture(t, { respond, serviceOptions = {},
     if (sending.length !== 1 || sending[0].provider !== 'openai') throw new Error('stub-before-durable-sending');
     sdkCalls.push({ request: structuredClone(request), options: sdkOptions });
     const input = JSON.parse(request.input);
-    return respond ? respond(request, sdkOptions, input) : { status: 'completed', service_tier: 'default', output_text: JSON.stringify(stubExtraction(input)), usage: { input_tokens: 1000, output_tokens: 2000 } };
+    const response = await (respond ? respond(request, sdkOptions, input) : { status: 'completed', service_tier: 'default', output_text: JSON.stringify(stubExtraction(input)), usage: { input_tokens: 1000, output_tokens: 2000 } });
+    // The SDK stub represents the current wire contract; fake legacy fixtures retain v1.
+    try {
+      const wire = JSON.parse(response.output_text);
+      if (wire.schemaVersion === 1 && Array.isArray(wire.candidates)) {
+        wire.schemaVersion = 2;
+        for (const c of wire.candidates) for (const e of c.evidence || []) { delete e.start; delete e.end; }
+        response.output_text = JSON.stringify(wire);
+      }
+    } catch { /* retain intentionally malformed fictional response */ }
+    return response;
   } } };
   const provider = createOpenAIExtractionProvider({ client });
   const service = createExtractionService({ ...c.options, provider, ...serviceOptions });
