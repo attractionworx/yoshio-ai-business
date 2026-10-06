@@ -191,6 +191,15 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
             const r = await extraction.prepare(value);
             response.writeHead(303, { Location: `/offer-extractions/${r.id}`, 'Cache-Control': 'no-store' }); return response.end();
           }
+          const upgrade = url.pathname.match(/^\/offer-extractions\/([a-f0-9-]{36})\/configuration-upgrade(?:\/(prepare))?$/);
+          if (upgrade) {
+            if (request.method === 'GET' && !upgrade[2]) return send(200, page('設定変更再抽出の準備確認', extractionViews.upgrade(await extraction.upgradePreview(upgrade[1]))));
+            if (request.method !== 'POST' || upgrade[2] !== 'prepare') throw requestError('操作が見つかりません。', 404);
+            if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+            const token = parseExtractionApproval(await readForm(request, host, 6000));
+            const child = await extraction.prepareUpgrade(upgrade[1], token, { confirm: true });
+            response.writeHead(303, { Location: `/offer-extractions/${child.id}`, 'Cache-Control': 'no-store' }); return response.end();
+          }
           const reanalysis = url.pathname.match(/^\/offer-extractions\/([a-f0-9-]{36})\/reanalysis(?:\/(prepare))?$/);
           if (reanalysis) {
             if (request.method === 'GET' && !reanalysis[2]) return send(200, page('意図的再解析の準備確認', extractionViews.reanalysis(await extraction.reanalysisPreview(reanalysis[1]))));
@@ -210,7 +219,7 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
           response.writeHead(303, { Location: `/offer-extractions/${match[1]}`, 'Cache-Control': 'no-store' }); return response.end();
         } catch (error) {
           const status = [400,403,404,409,413,415,503].includes(error.status) ? error.status : 503;
-          return send(status, page('抽出停止', extractionViews.failure(extractionFailureContext(error, request.method === 'POST' && (url.pathname === '/offer-extractions/prepare' || /\/reanalysis\/prepare$/.test(url.pathname)) ? 'prepare' : 'other'))));
+          return send(status, page('抽出停止', extractionViews.failure(extractionFailureContext(error, request.method === 'POST' && (url.pathname === '/offer-extractions/prepare' || /\/(?:reanalysis|configuration-upgrade)\/prepare$/.test(url.pathname)) ? 'prepare' : 'other'))));
         }
       }
       if (url.pathname === '/maintenance' || url.pathname.startsWith('/maintenance/')) {
