@@ -1,0 +1,878 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "candidates"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "enum": [
+        3
+      ]
+    },
+    "candidates": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 200,
+      "items": {
+        "$ref": "#/$defs/payload"
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Target-disjoint regulation extraction wire v3",
+  "description": "AI output only. No approval, verification, offer state, official IDs or timestamps.",
+  "$defs": {
+    "payload": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/candidate_name"
+        },
+        {
+          "$ref": "#/$defs/candidate_conversion_name"
+        },
+        {
+          "$ref": "#/$defs/candidate_disclosure_text"
+        },
+        {
+          "$ref": "#/$defs/candidate_facts"
+        },
+        {
+          "$ref": "#/$defs/candidate_targetAudience"
+        },
+        {
+          "$ref": "#/$defs/candidate_sellingPoints"
+        },
+        {
+          "$ref": "#/$defs/candidate_prohibitedExpressions"
+        },
+        {
+          "$ref": "#/$defs/candidate_eligibility"
+        },
+        {
+          "$ref": "#/$defs/candidate_approvalConditions"
+        },
+        {
+          "$ref": "#/$defs/candidate_rejectionConditions"
+        },
+        {
+          "$ref": "#/$defs/candidate_ctaLabel"
+        },
+        {
+          "$ref": "#/$defs/candidate_reward_evidence"
+        },
+        {
+          "$ref": "#/$defs/candidate_unmapped"
+        }
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "documentId",
+        "blockId",
+        "quote"
+      ],
+      "properties": {
+        "documentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "blockId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 5000,
+          "description": "連続原文を完全転記。trim、正規化、訂正、要約、引用符追加は禁止。反復する短い引用を避け、一意な原文を選ぶ。start/endは出力しない。"
+        }
+      },
+      "description": "指定documentの指定block内で一意に完全一致する連続原文quote。位置はローカルで決定する。"
+    },
+    "candidate_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 5000
+    },
+    "conversion_group": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$"
+    },
+    "candidate_name": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "name"
+          ]
+        },
+        "conversionKey": {
+          "type": "null"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "price",
+            "track_record",
+            "effect",
+            "feature",
+            "audience",
+            "selling_point",
+            "eligibility",
+            "approval",
+            "rejection",
+            "other"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "fact"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_conversion_name": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "conversion_name"
+          ]
+        },
+        "conversionKey": {
+          "$ref": "#/$defs/conversion_group"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "price",
+            "track_record",
+            "effect",
+            "feature",
+            "audience",
+            "selling_point",
+            "eligibility",
+            "approval",
+            "rejection",
+            "other"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "fact"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_disclosure_text": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "disclosure_text"
+          ]
+        },
+        "conversionKey": {
+          "type": "null"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "price",
+            "track_record",
+            "effect",
+            "feature",
+            "audience",
+            "selling_point",
+            "eligibility",
+            "approval",
+            "rejection",
+            "other"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "fact"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_facts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "facts"
+          ]
+        },
+        "conversionKey": {
+          "type": "null"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "price",
+            "track_record",
+            "effect",
+            "feature",
+            "audience",
+            "selling_point",
+            "eligibility",
+            "approval",
+            "rejection",
+            "other"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "fact"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_targetAudience": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "targetAudience"
+          ]
+        },
+        "conversionKey": {
+          "type": "null"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "audience"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "fact"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_sellingPoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "sellingPoints"
+          ]
+        },
+        "conversionKey": {
+          "type": "null"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "selling_point"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "fact"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_prohibitedExpressions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "prohibitedExpressions"
+          ]
+        },
+        "conversionKey": {
+          "type": "null"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "prohibition"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "constraint_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "restriction",
+            "marketing_goal"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_eligibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "eligibility"
+          ]
+        },
+        "conversionKey": {
+          "$ref": "#/$defs/conversion_group"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "eligibility"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "conversion_condition"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_approvalConditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "approvalConditions"
+          ]
+        },
+        "conversionKey": {
+          "$ref": "#/$defs/conversion_group"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "approval"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "conversion_condition"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_rejectionConditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "rejectionConditions"
+          ]
+        },
+        "conversionKey": {
+          "$ref": "#/$defs/conversion_group"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "rejection"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "conversion_condition"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_ctaLabel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "ctaLabel"
+          ]
+        },
+        "conversionKey": {
+          "$ref": "#/$defs/conversion_group"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "price",
+            "track_record",
+            "effect",
+            "feature",
+            "audience",
+            "selling_point",
+            "eligibility",
+            "approval",
+            "rejection",
+            "other"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "publishable",
+            "constraint_only",
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "fact"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_reward_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "reward_evidence"
+          ]
+        },
+        "conversionKey": {
+          "$ref": "#/$defs/conversion_group"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "reward"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "fact"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    },
+    "candidate_unmapped": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "conversionKey",
+        "category",
+        "text",
+        "usage",
+        "purpose",
+        "evidence"
+      ],
+      "properties": {
+        "target": {
+          "type": "string",
+          "enum": [
+            "unmapped"
+          ]
+        },
+        "conversionKey": {
+          "type": "null"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "price",
+            "track_record",
+            "effect",
+            "feature",
+            "audience",
+            "selling_point",
+            "eligibility",
+            "approval",
+            "rejection",
+            "other"
+          ]
+        },
+        "text": {
+          "$ref": "#/$defs/candidate_text"
+        },
+        "usage": {
+          "type": "string",
+          "enum": [
+            "internal_only"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "enum": [
+            "unmapped"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        }
+      }
+    }
+  },
+  "$id": "regulation-extraction-wire-v3.schema.json"
+}

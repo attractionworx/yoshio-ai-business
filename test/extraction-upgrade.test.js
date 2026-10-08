@@ -71,7 +71,7 @@ test('upgrade: verified historical profiles audit with their own request instruc
       estimate: { inputTokens: estimateExtractionInput(payload, p).inputTokens } };
     assert.deepEqual(auditExtractionInput(record, input).payload, payload);
     assert.equal(auditExtractionInput(record, input).profile.instructions, p.instructions);
-    const captured = { schemaVersion: p.processingContract ? 2 : 1, profile: p };
+    const captured = { schemaVersion: p.processingContract?.wireSchemaVersion === 3 ? 3 : p.processingContract ? 2 : 1, profile: p };
     assert.deepEqual(validateProfileSnapshot(captured, record), captured);
     const unknown = structuredClone(record); unknown.configuration.version += '-unregistered';
     assert.throws(() => auditExtractionInput(unknown, input), { code: 'historical_profile_unknown' });

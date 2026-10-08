@@ -25,7 +25,7 @@ export async function openaiExtractionFixture(t, { respond, serviceOptions = {},
     try {
       const wire = JSON.parse(response.output_text);
       if (wire.schemaVersion === 1 && Array.isArray(wire.candidates)) {
-        wire.schemaVersion = 2;
+        wire.schemaVersion = request.text.format.schema.properties.schemaVersion.enum[0];
         for (const c of wire.candidates) for (const e of c.evidence || []) { delete e.start; delete e.end; }
         response.output_text = JSON.stringify(wire);
       }
