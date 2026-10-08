@@ -99,8 +99,8 @@ try {
   await call('Network.setBlockedURLs', { urls: ['https://*', 'http://*.openai.com/*'] });
   await call('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
   await call('Page.navigate', { url: base + route });
-  await until(() => evaluate('Boolean(document.querySelector("a[href$=reflection]"))'));
-  await evaluate('document.querySelector("a[href$=reflection]").click()');
+  await until(() => evaluate('Boolean(document.querySelector("a[href$=reflection-v2]"))'));
+  await call('Page.navigate', { url: base + route + '/reflection' });
   await until(() => evaluate('document.body.innerText.includes("正式案件への反映プレビュー")'));
   assert.equal((await offers.get(offer.id)).revision, 1);
   for (const width of [375, 1280]) {

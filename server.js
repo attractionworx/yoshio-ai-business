@@ -1,3 +1,6 @@
+import { createMappingDraftStore, mappingDraftBinding, mappingDraftMatches, mappingDraftProgress } from './lib/offer-import/reflection-mapping-draft.js';
+import { reflectionV2Diagnostic } from './lib/offer-import/reflection-v2-policy.js';
+import { reflectionV2Pages, reflectionV2Offer, parseReflectionV2Form } from './lib/offer-import/reflection-v2-pages.js';
 import { createExecutionGate } from './lib/offer-import/execution-gate.js';
 import { createBudgetCoordinator } from './lib/ai/budget-coordinator.js';
 import { budgetPage, parseBudgetActivation, parseRealApproval, realApprovalPreview } from './lib/ai/budget-pages.js';
@@ -116,7 +119,9 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
   const importStore = offerImportOptions.store || createOfferImportStore(dataDirectory);
   const importViews = offerImportPages(escapeHtml);
   const offerStore = createOfferStore(dataDirectory);
+  const mappingDraftStore = createMappingDraftStore({ dataDirectory, importStore, offerStore });
   const reflection = offerImportOptions.reflection || createReflectionService({ dataDirectory, importStore, offerStore });
+  const reflectionV2Views = reflectionV2Pages(escapeHtml);
   const reflectionViews = reflectionPages(escapeHtml);
   const maintenance = createMaintenanceService(dataDirectory, maintenanceOptions);
   const maintenanceViews = maintenancePages(escapeHtml);
@@ -260,12 +265,63 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
           return send(404, page('管理操作を停止', maintenanceViews.failure()));
         } catch (error) { return send([400, 403, 409, 413, 415].includes(error.status) ? error.status : 503, page('管理操作を停止', maintenanceViews.failure())); }
       }
+      if (request.method === 'GET' && url.pathname === '/reflection-v2.js') return send(200, await readFile(path.join(projectDirectory, 'public/reflection-v2.js')), 'text/javascript; charset=utf-8');
+      if (request.method === 'GET' && url.pathname === '/reflection-v2-guidance.js') return send(200, await readFile(path.join(projectDirectory, 'lib/offer-import/reflection-v2-guidance.js')), 'text/javascript; charset=utf-8');
       if (request.method === 'GET' && url.pathname === '/offer-import.js') return send(200, await readFile(path.join(projectDirectory, 'public/offer-import.js')), 'text/javascript; charset=utf-8');
       if (url.pathname === '/offer-imports' || url.pathname.startsWith('/offer-imports/')) {
-        const reflectMatch = url.pathname.match(/^\/offer-imports\/([a-f0-9-]{36})\/(reflection|commit|commits|recover)$/);
+        const reflectMatch = url.pathname.match(/^\/offer-imports\/([a-f0-9-]{36})\/(reflection|reflection-v2|commit|commits|recover)$/);
         if (reflectMatch) {
           const [, id, action] = reflectMatch;
           try {
+            if (action === 'reflection-v2' && ['GET', 'POST'].includes(request.method)) {
+              const draft = await importStore.get(id);
+              let options = null;
+              let expected = null;
+              let savedDraft = null;
+              let offerId;
+              if (request.method === 'POST') {
+                if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+                if (url.search) throw requestError('表示指定が不正です。', 400);
+                const form = await readForm(request, host, 512_000);
+                offerId = form.get('offerId');
+                const offer = await offerStore.get(offerId);
+                const saving = form.get('draftAction') === 'save';
+                options = parseReflectionV2Form(form, draft, offer, saving);
+                savedDraft = await mappingDraftStore.get(id, offerId);
+                if (savedDraft && !mappingDraftMatches(savedDraft, draft, offer)) throw requestError('下書きが古いため停止しました。', 409);
+                const hasBinding = ['draftRevision', 'importHash', 'offerHash'].some(k => form.has(k));
+                if (saving || savedDraft || hasBinding) {
+                  if (['draftRevision', 'importHash', 'offerHash'].some(k => form.getAll(k).length !== 1)
+                    || !/^(0|[1-9]\d*)$/.test(form.get('draftRevision')) || !Number.isSafeInteger(Number(form.get('draftRevision')))) throw requestError('下書き指定が不正です。', 400);
+                  if (Number(form.get('draftRevision')) !== (savedDraft?.revision || 0)
+                    || form.get('importHash') !== reflectionHash(draft) || form.get('offerHash') !== reflectionHash(offer)) throw requestError('下書きの前提またはrevisionが変わりました。', 409);
+                }
+                expected = { ...mappingDraftBinding(draft, offer), ...(hasBinding ? { draftRevision: Number(form.get('draftRevision')), draftHash: reflectionHash(savedDraft) } : {}) };
+                if (saving) {
+                  reflection.invalidateV2Preview(id);
+                  await mappingDraftStore.save(id, offerId, Number(form.get('draftRevision')), mappingDraftBinding(draft, offer), options.choices);
+                  reflection.invalidateV2Preview(id);
+                  response.writeHead(303, { Location: `/offer-imports/${id}/reflection-v2?offerId=${offerId}` }); return response.end();
+                }
+              } else offerId = reflectionV2Offer(url.searchParams, draft);
+              const offers = await offerStore.list();
+              const selectedOffer = offers.find(o => o.id === offerId);
+              if (request.method === 'GET') {
+                reflection.invalidateV2Preview(id);
+                if (selectedOffer) {
+                  savedDraft = await mappingDraftStore.get(id, offerId);
+                  if (savedDraft && !mappingDraftMatches(savedDraft, draft, selectedOffer)) return send(409, page('下書き停止', '<section class="card"><h1>下書きがstaleのため停止しました</h1><p>案件・取り込みrevision、本文・分類・usage・根拠またはpolicyが変わりました。保存済み判断を変更・補完せず、下書きの再開・保存・プレビューを停止します。古い承認は復活しません。</p></section>'));
+                  if (savedDraft) options = { schemaVersion: 2, offerId, choices: savedDraft.choices };
+                }
+              }
+              const selection = reflectionV2Views.selection(draft, offers, offerId, options, savedDraft ? { ...savedDraft, progress: mappingDraftProgress(savedDraft, draft, selectedOffer) } : null);
+              if (request.method === 'GET') return send(200, page('候補単位の反映先・下書き', selection));
+              const prepared = options ? await reflection.preview(id, options, expected) : null;
+              const offer = offers.find(o => o.id === offerId);
+              return send(200, page('候補単位の反映プレビュー', prepared
+                ? `<p><a href="/offer-imports/${id}/reflection-v2?offerId=${offerId}">対応を変更する（現在のv2承認は失効します）</a></p>` + reflectionV2Views.decisions(prepared.plan, offer) + reflectionViews.preview(draft, { ...prepared, hash: reflectionHash(prepared.plan) })
+                : selection));
+            }
             if (request.method === 'GET' && action === 'reflection') {
               const draft = await importStore.get(id);
               const options = reflectionOptions(url.searchParams, draft);
@@ -276,15 +332,17 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
             if (request.method === 'GET' && action === 'commits') return send(200, page('反映記録', reflectionViews.records(id, await reflection.records(id))));
             if (request.method !== 'POST' || !['commit', 'recover'].includes(action)) throw requestError('操作が見つかりません。', 404);
             if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
-            const token = parseReflectionApproval(await readForm(request, host, 30_000));
+            const approvalForm = await readForm(request, host, 512_000);
+            const token = parseReflectionApproval(approvalForm);
             // Tokens bind the import; never allow a token from another route to authorize this import.
             const data = JSON.parse(Buffer.from(token.split('.')[0], 'base64url').toString());
+            if (data.options?.schemaVersion !== 2 && approvalForm.toString().length > 30_000) throw requestError('入力が大きすぎます。', 413);
             if (data.importId !== id) throw requestError('確認対象が異なります。', 400);
             await reflection[action](token, { approve: true });
             response.writeHead(303, { Location: `/offer-imports/${id}/commits` }); return response.end();
           } catch (error) {
             const status = [400, 403, 404, 409, 413, 415, 503].includes(error.status) ? error.status : 503;
-            return send(status, page('反映停止', importViews.failure(status, id) + `<p><a href="/offer-imports/${id}/commits">反映記録と復旧確認を開く</a></p><p><a href="/offer-imports/${id}/reflection">最新版から反映プレビューを作り直す</a></p>`));
+            return send(status, page('反映停止', importViews.failure(status, id) + reflectionV2Diagnostic(error, escapeHtml) + `<p><a href="/offer-imports/${id}/commits">反映記録と復旧確認を開く</a></p><p><a href="/offer-imports/${id}/reflection">最新版から反映プレビューを作り直す</a></p>`));
           }
         }
         const match = url.pathname.match(/^\/offer-imports\/([a-f0-9-]{36})(?:\/revisions\/([1-9]\d*)|\/candidates\/(candidate-[1-9]\d*)\/(review|verify))?$/);

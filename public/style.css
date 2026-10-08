@@ -72,3 +72,7 @@ fieldset { border: 1px solid #dfe6e0; border-radius: 8px; margin: 16px 0; min-wi
 .import-nav-state { display: block; margin-top: .25rem; }
 .import-state-checked, .import-state-rejected { border-left-color: #216c5a; background: #edf5ef; }
 .import-edit-notice, .import-checked-notice { overflow-wrap: anywhere; }
+
+.reflection-v2 input[type="checkbox"], .reflection-v2 input[type="radio"] { display: inline-block; width: auto; margin-right: .5rem; }
+.reflection-v2 fieldset { min-width: 0; }
+.reflection-v2 summary, .reflection-v2 label { overflow-wrap: anywhere; }
