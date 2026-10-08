@@ -25,7 +25,7 @@ import { parseOfferForm } from './lib/offers/form.js';
 import { offerPages } from './lib/offer-pages.js';
 import { activeFindings } from './lib/offers/ui-guidance.js';
 import { createOfferImportStore } from './lib/offer-import/store.js';
-import { offerImportPages, parseReviewForm } from './lib/offer-import/ui.js';
+import { offerImportPages, parseReviewForm, parseReviewNavigation, reviewSuccessLocation } from './lib/offer-import/ui.js';
 import { createMaintenanceService } from './lib/maintenance/backup.js';
 import { maintenancePages, parseMaintenanceForm } from './lib/maintenance/pages.js';
 import { createReflectionService } from './lib/offer-import/reflection-service.js';
@@ -296,11 +296,12 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
             await importExecutionReady(match[1], history[0]);
             const draft = match[2] ? history.find(d => d.revision === Number(match[2])) : history.at(-1);
             if (!draft) throw requestError('記録が見つかりません。', 404);
-            return send(200, page('候補レビュー', importViews.detail(draft, history, Boolean(match[2])))
+            return send(200, page('候補レビュー', importViews.detail(draft, history, Boolean(match[2]), parseReviewNavigation(url.searchParams, draft)))
               .replace('</head>', '<script src="/offer-import.js" defer></script></head>'));
           }
           if (request.method !== 'POST' || !match[3]) throw requestError('記録が見つかりません。', 404);
           if (request.headers.origin !== `http://${host}`) throw requestError('送信元が不正です。', 403);
+          if (url.search) throw requestError('表示指定はGETで指定してください。', 400);
           const form = await readForm(request, host, 100_000);
           await importExecutionReady(match[1], (await importStore.history(match[1]))[0]);
           const draft = await importStore.get(match[1]);
@@ -308,8 +309,8 @@ export function createApp({ dataDirectory = path.join(projectDirectory, 'data'),
           if (!candidate) throw requestError('候補が見つかりません。', 404);
           const parsed = parseReviewForm(form, candidate, match[4] === 'verify');
           if (parsed.revision !== draft.revision) throw requestError('古い確認です。', 409);
-          await importStore.review(match[1], candidate.id, parsed.revision, parsed.action);
-          response.writeHead(303, { Location: `/offer-imports/${match[1]}` });
+          const saved = await importStore.review(match[1], candidate.id, parsed.revision, parsed.action);
+          response.writeHead(303, { Location: reviewSuccessLocation(saved, candidate.id, match[4]) });
           return response.end();
         } catch (error) {
           const status = [400, 403, 404, 409, 413, 415, 503].includes(error.status) ? error.status : 503;

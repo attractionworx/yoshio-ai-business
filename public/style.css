@@ -62,3 +62,13 @@ fieldset { border: 1px solid #dfe6e0; border-radius: 8px; margin: 16px 0; min-wi
 .import-review input:not([type="checkbox"]), .import-review select, .import-review textarea { max-width: 100%; box-sizing: border-box; }
 .import-verification { border: 1px solid #888; padding: 1rem; margin-top: 1rem; }
 @media (max-width: 700px) { .import-columns { grid-template-columns: minmax(0, 1fr); } }
+
+.import-progress { border: 1px solid #b8c9c0; border-radius: 8px; padding: 1rem; margin: 1.5rem 0; }
+.import-progress dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; }
+.import-progress dd { font-size: 1.5rem; font-weight: 700; }
+.import-candidate-nav ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: .75rem; list-style: none; padding: 0; }
+.import-candidate-nav li, .import-saved-state { border-left: 4px solid #8a6b22; background: #faf6e9; padding: .75rem; overflow-wrap: anywhere; }
+.import-candidate-nav a { display: block; }
+.import-nav-state { display: block; margin-top: .25rem; }
+.import-state-checked, .import-state-rejected { border-left-color: #216c5a; background: #edf5ef; }
+.import-edit-notice, .import-checked-notice { overflow-wrap: anywhere; }
